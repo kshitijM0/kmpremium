@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KM Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- HEADER -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-logo">KM</span>
+      <span class="brand-name">Panel</span>
+    </div>
+    <div class="balance-pill">
+      <span class="balance-dot"></span>
+      Balance: <span id="balanceValue" class="mono">—</span>
+    </div>
+  </header>
+
+  <!-- NAV TABS -->
+  <nav class="tabs">
+    <button class="tab-btn" data-tab="api">🔑 API</button>
+    <button class="tab-btn active" data-tab="order">📦 Order</button>
+    <button class="tab-btn" data-tab="tracker">📡 Tracker</button>
+    <button class="tab-btn" data-tab="schedules">📅 Schedules</button>
+    <button class="tab-btn" data-tab="logs">🧾 Logs</button>
+  </nav>
+
+  <main class="content">
+
+    <!-- ================= API TAB ================= -->
+    <section class="panel" id="tab-api">
+      <div class="panel-head">
+        <h1>Connect a panel</h1>
+        <p>Works with any SMM panel that exposes a standard key + action API — not tied to one provider.</p>
+      </div>
+
+      <div class="api-card">
+        <div class="field-block">
+          <span class="field-label">Panel website / API URL</span>
+          <input id="apiBaseUrl" class="input full" type="text" placeholder="https://yoyomedia.com/api/v2">
+        </div>
+        <div class="field-block">
+          <span class="field-label">API key</span>
+          <input id="apiKeyInput" class="input full" type="text" placeholder="Your panel API key">
+        </div>
+        <div class="field-block">
+          <span class="field-label">Proxy server URL (fixes CORS blocks)</span>
+          <input id="proxyUrlInput" class="input full" type="text" placeholder="http://localhost:3001/proxy" value="http://localhost:3001/proxy">
+          <span class="randomness-caption">Leave this as-is if you're running the included proxy-server locally. Most panels block direct browser calls, so this is required for real orders to work.</span>
+        </div>
+
+        <button id="connectBtn" class="submit-btn">Connect</button>
+        <div id="connectStatus" class="connect-status"></div>
+      </div>
+
+      <div class="api-card">
+        <div class="card-title"><span class="card-icon">📋</span> Fetched services</div>
+        <div id="fetchedServicesList" class="fetched-services-list">
+          <div class="summary-empty">Not connected yet — using demo catalog until you connect.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= ORDER TAB ================= -->
+    <section class="panel active" id="tab-order">
+
+      <div class="create-order-card">
+
+        <div class="card-title"><span class="card-icon">📁</span> Create Order</div>
+
+        <button class="presets-btn" id="presetsBtn">
+          <span><span class="card-icon">💾</span> Saved Presets</span>
+          <span class="chevron">▾</span>
+        </button>
+
+        <div class="field-block">
+          <span class="field-label">Schedule name</span>
+          <input id="scheduleName" class="input full" type="text" placeholder="e.g. Reel Daily Push">
+        </div>
+
+        <div class="field-block">
+          <span class="field-label">Target link</span>
+          <input id="targetLink" class="input full" type="text" placeholder="https://instagram.com/p/...">
+        </div>
+
+        <div class="section-title"><span class="card-icon">🧩</span> Services</div>
+
+        <div id="servicesContainer" class="services-container"></div>
+
+        <button id="addServiceBtn" class="add-slot-btn">+ Add slot</button>
+
+      </div>
+
+      <!-- GROWTH GRAPH -->
+      <div class="graph-card">
+        <div class="graph-head">
+          <span class="graph-title">Total quantity queued</span>
+          <div class="live-pill"><span class="live-dot"></span>LIVE</div>
+        </div>
+        <svg id="growthSvg" class="graph-svg" viewBox="0 0 600 120" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="fillGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#ff2d43" stop-opacity="0.35"/>
+              <stop offset="100%" stop-color="#ff2d43" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <path id="graphFill" d="" fill="url(#fillGrad)"></path>
+          <path id="graphLine" d="" fill="none" stroke="#ff2d43" stroke-width="2"></path>
+        </svg>
+        <div class="graph-bignum mono" id="graphBigNum">0</div>
+      </div>
+
+      <!-- COST SUMMARY -->
+      <div class="cost-card">
+        <div class="summary-row">
+          <span>Total quantity</span>
+          <span id="totalQty" class="mono">0</span>
+        </div>
+        <div class="summary-row summary-total">
+          <span>Estimated cost</span>
+          <span id="totalCost" class="mono">$0.00</span>
+        </div>
+        <button class="submit-btn" id="submitOrderBtn">Create Order</button>
+        <div id="orderStatus" class="connect-status"></div>
+      </div>
+
+    </section>
+
+    <!-- ================= TRACKER TAB ================= -->
+    <section class="panel" id="tab-tracker">
+      <div class="panel-head">
+        <h1>Tracker</h1>
+        <p>Paste a reel link to watch a live simulated views/likes graph — blue is views, red is likes.</p>
+      </div>
+
+      <div class="api-card">
+        <div class="field-block">
+          <span class="field-label">Reel / post link</span>
+          <input id="trackerLink" class="input full" type="text" placeholder="https://instagram.com/reel/...">
+        </div>
+        <button id="trackBtn" class="submit-btn">Start tracking</button>
+      </div>
+
+      <div class="graph-card">
+        <div class="graph-head">
+          <span class="graph-title">Live engagement</span>
+          <div class="live-pill" id="trackerLivePill"><span class="live-dot"></span>LIVE</div>
+        </div>
+        <svg id="trackerSvg" class="graph-svg" viewBox="0 0 600 140" preserveAspectRatio="none">
+          <path id="trackerViewsLine" fill="none" stroke="#3d9dff" stroke-width="2"></path>
+          <path id="trackerLikesLine" fill="none" stroke="#ff2d43" stroke-width="2"></path>
+        </svg>
+        <div class="tracker-stats">
+          <div class="tracker-stat"><span class="dot-blue"></span>Views <span id="trackerViewsNum" class="mono">0</span></div>
+          <div class="tracker-stat"><span class="dot-red"></span>Likes <span id="trackerLikesNum" class="mono">0</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SCHEDULES TAB ================= -->
+    <section class="panel" id="tab-schedules">
+      <div class="panel-head">
+        <h1>Schedules</h1>
+        <p>Every leg from every service slot, merged into one delivery timeline.</p>
+      </div>
+
+      <div id="schedulesLocked" class="lock-card">
+        <div class="lock-icon">🔒</div>
+        <div class="lock-title">Protected tab</div>
+        <input id="schedulesPassword" class="input full" type="password" placeholder="Enter password">
+        <button id="unlockSchedulesBtn" class="submit-btn">Unlock</button>
+        <div id="lockError" class="lock-error"></div>
+      </div>
+
+      <div id="schedulesContent" style="display:none;">
+        <div id="scheduleTable" class="schedule-table">
+          <div class="summary-empty">No scheduled legs yet — add a service in the Order tab.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= LOGS TAB ================= -->
+    <section class="panel" id="tab-logs">
+      <div class="panel-head">
+        <h1>Activity logs</h1>
+        <p>Every action taken in this session, most recent first.</p>
+      </div>
+      <div id="logsList" class="logs-list"></div>
+    </section>
+
+  </main>
+</div>
+
+<!-- CUSTOM GRAPH EDITOR MODAL -->
+<div id="graphModal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-head">
+      <span>Custom delivery curve</span>
+      <button id="closeGraphModal" class="remove-btn">✕</button>
+    </div>
+    <p class="modal-hint">Drag the 20 dots up or down to shape how delivery ramps across the duration. Higher = more units in that slice.</p>
+    <svg id="customGraphSvg" class="custom-graph-svg" viewBox="0 0 600 200"></svg>
+    <button id="saveGraphBtn" class="submit-btn">Save custom curve</button>
+  </div>
+</div>
+
+<!-- TEMPLATE for one service slot -->
+<template id="serviceTemplate">
+  <div class="service-card">
+
+    <div class="slot-head">
+      <span class="slot-label">Slot</span>
+      <button class="remove-btn" title="Remove slot">✕</button>
+    </div>
+
+    <div class="slot-row">
+      <select class="input category-select"></select>
+
+      <div class="service-search-wrap">
+        <span class="search-icon">🔍</span>
+        <input class="input service-search" type="text" placeholder="Search service ID or name">
+        <div class="service-dropdown"></div>
+      </div>
+    </div>
+
+    <div class="selected-service-note">No service selected yet</div>
+
+    <div class="field-block">
+      <span class="field-label">Quantity</span>
+      <input class="input full qty" type="number" min="1" placeholder="e.g. 2000" value="1000">
+    </div>
+
+    <div class="field-block">
+      <span class="field-label">Duration (hours)</span>
+      <input class="input full duration" type="number" min="1" max="72" value="24">
+    </div>
+
+    <div class="field-block randomness-block">
+      <span class="field-label">
+        Delivery randomness — <span class="randomness-readout mono">18%</span>
+      </span>
+      <input class="input full randomness" type="range" min="1" max="40" value="18">
+      <span class="randomness-caption">At 40% delivery becomes fully random (real drip-style, spread over 12–24h)</span>
+    </div>
+
+    <div class="field-block graph-select-block">
+      <span class="field-label">Delivery curve</span>
+      <div class="graph-select-row">
+        <select class="input full graph-select">
+          <option value="steady">Steady Drip</option>
+          <option value="burst">Instant Burst</option>
+          <option value="late">Late Spike</option>
+          <option value="organic1" selected>Organic — Morning Rise</option>
+          <option value="organic2">Organic — Evening Wave</option>
+          <option value="custom">Custom (edit below)</option>
+        </select>
+        <button class="edit-graph-btn">Edit</button>
+      </div>
+    </div>
+
+    <div class="preview-head">
+      <span>Delivery timeline</span>
+      <span class="preview-cost mono">$0.00</span>
+    </div>
+
+    <div class="legs-preview"></div>
+
+  </div>
+</template>
+
+<script src="script.js"></script>
+</body>
+</html>
