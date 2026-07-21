@@ -45,16 +45,11 @@
       <div class="api-card">
         <div class="field-block">
           <span class="field-label">Panel website / API URL</span>
-          <input id="apiBaseUrl" class="input full" type="text" placeholder="https://yoyomedia.com/api/v2">
+          <input id="apiBaseUrl" class="input full" type="text" placeholder="https://yoyomedia.in/api/v2">
         </div>
         <div class="field-block">
           <span class="field-label">API key</span>
           <input id="apiKeyInput" class="input full" type="text" placeholder="Your panel API key">
-        </div>
-        <div class="field-block">
-          <span class="field-label">Proxy server URL (fixes CORS blocks)</span>
-          <input id="proxyUrlInput" class="input full" type="text" placeholder="http://localhost:3001/proxy" value="http://localhost:3001/proxy">
-          <span class="randomness-caption">Leave this as-is if you're running the included proxy-server locally. Most panels block direct browser calls, so this is required for real orders to work.</span>
         </div>
 
         <button id="connectBtn" class="submit-btn">Connect</button>
@@ -102,20 +97,13 @@
       <!-- GROWTH GRAPH -->
       <div class="graph-card">
         <div class="graph-head">
-          <span class="graph-title">Total quantity queued</span>
+          <span class="graph-title">Delivery by service</span>
           <div class="live-pill"><span class="live-dot"></span>LIVE</div>
         </div>
         <svg id="growthSvg" class="graph-svg" viewBox="0 0 600 120" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="fillGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="#ff2d43" stop-opacity="0.35"/>
-              <stop offset="100%" stop-color="#ff2d43" stop-opacity="0"/>
-            </linearGradient>
-          </defs>
-          <path id="graphFill" d="" fill="url(#fillGrad)"></path>
-          <path id="graphLine" d="" fill="none" stroke="#ff2d43" stroke-width="2"></path>
+          <g id="graphLinesGroup"></g>
         </svg>
-        <div class="graph-bignum mono" id="graphBigNum">0</div>
+        <div id="graphLegend" class="graph-legend"></div>
       </div>
 
       <!-- COST SUMMARY -->
@@ -138,7 +126,7 @@
     <section class="panel" id="tab-tracker">
       <div class="panel-head">
         <h1>Tracker</h1>
-        <p>Paste a reel link to watch a live simulated views/likes graph — blue is views, red is likes.</p>
+        <p>Shows the real delivery history this panel has placed for a link — only orders from the last 7 days.</p>
       </div>
 
       <div class="api-card">
@@ -146,22 +134,18 @@
           <span class="field-label">Reel / post link</span>
           <input id="trackerLink" class="input full" type="text" placeholder="https://instagram.com/reel/...">
         </div>
-        <button id="trackBtn" class="submit-btn">Start tracking</button>
+        <button id="trackBtn" class="submit-btn">Show history</button>
       </div>
 
       <div class="graph-card">
         <div class="graph-head">
-          <span class="graph-title">Live engagement</span>
-          <div class="live-pill" id="trackerLivePill"><span class="live-dot"></span>LIVE</div>
+          <span class="graph-title">Delivered so far (last 7 days)</span>
         </div>
         <svg id="trackerSvg" class="graph-svg" viewBox="0 0 600 140" preserveAspectRatio="none">
-          <path id="trackerViewsLine" fill="none" stroke="#3d9dff" stroke-width="2"></path>
-          <path id="trackerLikesLine" fill="none" stroke="#ff2d43" stroke-width="2"></path>
+          <g id="trackerLinesGroup"></g>
         </svg>
-        <div class="tracker-stats">
-          <div class="tracker-stat"><span class="dot-blue"></span>Views <span id="trackerViewsNum" class="mono">0</span></div>
-          <div class="tracker-stat"><span class="dot-red"></span>Likes <span id="trackerLikesNum" class="mono">0</span></div>
-        </div>
+        <div id="trackerLegend" class="graph-legend"></div>
+        <div id="trackerEmpty" class="summary-empty">Enter a link and click "Show history".</div>
       </div>
     </section>
 
@@ -208,7 +192,11 @@
     </div>
     <p class="modal-hint">Drag the 20 dots up or down to shape how delivery ramps across the duration. Higher = more units in that slice.</p>
     <svg id="customGraphSvg" class="custom-graph-svg" viewBox="0 0 600 200"></svg>
-    <button id="saveGraphBtn" class="submit-btn">Save custom curve</button>
+    <div class="field-block">
+      <span class="field-label">Name (to save permanently on this device)</span>
+      <input id="customGraphName" class="input full" type="text" placeholder="e.g. My Reel Curve">
+    </div>
+    <button id="saveGraphBtn" class="submit-btn">Save curve</button>
   </div>
 </div>
 
@@ -236,6 +224,7 @@
     <div class="field-block">
       <span class="field-label">Quantity</span>
       <input class="input full qty" type="number" min="1" placeholder="e.g. 2000" value="1000">
+      <span class="qty-warning"></span>
     </div>
 
     <div class="field-block">
