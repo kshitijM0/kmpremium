@@ -1,57 +1,140 @@
 // ==========================================
+// HARDCODED PROXY — no user-facing field needed
+// ==========================================
+const PROXY_URL = "https://kmpanel.onrender.com/proxy";
+
+// ==========================================
+// CATEGORY COLORS (used everywhere a category shows on a graph)
+// ==========================================
+const CATEGORY_COLORS = {
+  views: "#ff2d43", // red
+  likes: "#3d9dff", // blue
+  repost: "#ffd23d", // yellow
+  followers: "#33d17a", // green
+  comments: "#b475ff", // purple
+  other: "#9a8286", // muted grey
+};
+
+function colorForCategory(cat) {
+  return CATEGORY_COLORS[cat] || CATEGORY_COLORS.other;
+}
+
+// ==========================================
 // DEMO CATALOG (used until a real panel is connected)
+// Includes min/max like a real panel would return.
 // ==========================================
 const DEMO_CATALOG = {
   views: [
-    { id: 3546, name: "Instagram Views [Real, Fast]", rate: 0.006 },
-    { id: 3612, name: "Instagram Views [HQ, Refill]", rate: 0.009 },
-    { id: 3720, name: "Instagram Reel Views [Instant]", rate: 0.007 },
+    { id: 3546, name: "Instagram Views [Real, Fast]", rate: 0.006, min: 100, max: 100000 },
+    { id: 3612, name: "Instagram Views [HQ, Refill]", rate: 0.009, min: 100, max: 500000 },
+    { id: 3720, name: "Instagram Reel Views [Instant]", rate: 0.007, min: 500, max: 200000 },
   ],
   likes: [
-    { id: 4108, name: "Instagram Likes [Real Users]", rate: 0.012 },
-    { id: 4190, name: "Instagram Likes [Instant]", rate: 0.010 },
+    { id: 4108, name: "Instagram Likes [Real Users]", rate: 0.012, min: 10, max: 50000 },
+    { id: 4190, name: "Instagram Likes [Instant]", rate: 0.010, min: 20, max: 20000 },
   ],
   followers: [
-    { id: 5021, name: "Instagram Followers [HQ, No Drop]", rate: 0.020 },
-    { id: 5099, name: "Instagram Followers [Real, Refill 30d]", rate: 0.026 },
+    { id: 5021, name: "Instagram Followers [HQ, No Drop]", rate: 0.020, min: 50, max: 100000 },
+    { id: 5099, name: "Instagram Followers [Real, Refill 30d]", rate: 0.026, min: 100, max: 50000 },
   ],
   repost: [
-    { id: 6011, name: "Instagram Repost [Real Accounts]", rate: 0.015 },
+    { id: 6011, name: "Instagram Repost [Real Accounts]", rate: 0.015, min: 5, max: 10000 },
   ],
 };
 
-// Active catalog — replaced with real panel data after a successful connect
 let CATALOG = DEMO_CATALOG;
 let PANEL = { baseUrl: "", apiKey: "", connected: false };
 
 // ==========================================
-// DELIVERY CURVES (20 points each, weight 0-100)
+// BUILT-IN DELIVERY CURVES (20 points each, weight 0-100)
 // ==========================================
 const GRAPH_PRESETS = {
-  steady: { name: "Steady Drip", organic: false, points: Array(20).fill(50) },
-  burst: {
-    name: "Instant Burst",
-    organic: false,
-    points: [95,90,84,78,72,65,58,52,46,40,34,29,24,20,16,13,10,8,6,5],
-  },
-  late: {
-    name: "Late Spike",
-    organic: false,
-    points: [5,6,8,10,13,16,20,24,29,34,40,46,52,58,65,72,78,84,90,95],
-  },
-  organic1: {
-    name: "Organic — Morning Rise",
-    organic: true,
-    points: [8,10,14,20,28,38,50,62,72,80,85,88,88,85,80,74,68,62,58,55],
-  },
-  organic2: {
-    name: "Organic — Evening Wave",
-    organic: true,
-    points: [15,25,35,45,40,30,22,18,22,30,42,55,68,80,90,88,78,65,50,38],
-  },
+  steady: { name: "Steady Drip", points: Array(20).fill(50) },
+  burst: { name: "Instant Burst", points: [95,90,84,78,72,65,58,52,46,40,34,29,24,20,16,13,10,8,6,5] },
+  late: { name: "Late Spike", points: [5,6,8,10,13,16,20,24,29,34,40,46,52,58,65,72,78,84,90,95] },
+  organic1: { name: "Organic — Morning Rise", points: [8,10,14,20,28,38,50,62,72,80,85,88,88,85,80,74,68,62,58,55] },
+  organic2: { name: "Organic — Evening Wave", points: [15,25,35,45,40,30,22,18,22,30,42,55,68,80,90,88,78,65,50,38] },
 };
 
-let CUSTOM_GRAPH_POINTS = Array(20).fill(50);
+// ==========================================
+// SAVED CUSTOM GRAPHS (persisted in localStorage)
+// ==========================================
+const CUSTOM_GRAPHS_KEY = "km_panel_custom_graphs";
+
+function loadSavedGraphs() {
+  try {
+    const raw = localStorage.getItem(CUSTOM_GRAPHS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSavedGraphs(list) {
+  try {
+    localStorage.setItem(CUSTOM_GRAPHS_KEY, JSON.stringify(list));
+  } catch {
+    /* storage unavailable — ignore */
+  }
+}
+
+let SAVED_GRAPHS = loadSavedGraphs();
+
+// ==========================================
+// DELIVERY HISTORY (persisted per link, 7-day rolling window)
+// ==========================================
+const HISTORY_KEY = "km_panel_history";
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+function loadHistory() {
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveHistory(history) {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  } catch {
+    /* storage unavailable — ignore */
+  }
+}
+
+function pruneOldHistory() {
+  const history = loadHistory();
+  const cutoff = Date.now() - SEVEN_DAYS_MS;
+  let changed = false;
+
+  Object.keys(history).forEach((link) => {
+    const before = history[link].length;
+    history[link] = history[link].filter((entry) => entry.timestamp >= cutoff);
+    if (history[link].length !== before) changed = true;
+    if (history[link].length === 0) {
+      delete history[link];
+      changed = true;
+    }
+  });
+
+  if (changed) saveHistory(history);
+}
+
+function recordDelivery(link, category, amount) {
+  if (!link) return;
+  const history = loadHistory();
+  if (!history[link]) history[link] = [];
+  history[link].push({ category, amount, timestamp: Date.now() });
+  saveHistory(history);
+}
+
+function getHistoryForLink(link) {
+  const history = loadHistory();
+  const cutoff = Date.now() - SEVEN_DAYS_MS;
+  const entries = history[link] || [];
+  return entries.filter((entry) => entry.timestamp >= cutoff);
+}
 
 // ==========================================
 // ELEMENT REFERENCES
@@ -62,7 +145,6 @@ const serviceTemplate = document.getElementById("serviceTemplate");
 
 const totalQtyEl = document.getElementById("totalQty");
 const totalCostEl = document.getElementById("totalCost");
-const graphBigNumEl = document.getElementById("graphBigNum");
 const balanceValueEl = document.getElementById("balanceValue");
 
 const scheduleTable = document.getElementById("scheduleTable");
@@ -77,48 +159,19 @@ const orderStatusEl = document.getElementById("orderStatus");
 
 const apiBaseUrlInput = document.getElementById("apiBaseUrl");
 const apiKeyInputEl = document.getElementById("apiKeyInput");
-const proxyUrlInput = document.getElementById("proxyUrlInput");
 const connectBtn = document.getElementById("connectBtn");
 const connectStatusEl = document.getElementById("connectStatus");
 const fetchedServicesListEl = document.getElementById("fetchedServicesList");
-
-// ==========================================
-// GENERIC PANEL CALL — goes through the proxy
-// server when a proxy URL is set (fixes CORS),
-// otherwise calls the panel directly.
-// ==========================================
-async function callPanelAPI(baseUrl, apiKey, actionParams) {
-  const proxyUrl = proxyUrlInput.value.trim();
-  const params = { key: apiKey, ...actionParams };
-
-  if (proxyUrl) {
-    const res = await fetch(proxyUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ baseUrl, params }),
-    });
-    const data = await res.json();
-    if (data && data.error) throw new Error(data.error);
-    return data;
-  }
-
-  const res = await fetch(baseUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(params),
-  });
-  return res.json();
-}
 
 const graphModal = document.getElementById("graphModal");
 const closeGraphModal = document.getElementById("closeGraphModal");
 const saveGraphBtn = document.getElementById("saveGraphBtn");
 const customGraphSvg = document.getElementById("customGraphSvg");
+const customGraphNameInput = document.getElementById("customGraphName");
 
 const trackerLinkInput = document.getElementById("trackerLink");
 const trackBtn = document.getElementById("trackBtn");
-const trackerViewsNumEl = document.getElementById("trackerViewsNum");
-const trackerLikesNumEl = document.getElementById("trackerLikesNum");
+const trackerEmptyEl = document.getElementById("trackerEmpty");
 
 const schedulesLocked = document.getElementById("schedulesLocked");
 const schedulesContent = document.getElementById("schedulesContent");
@@ -127,11 +180,10 @@ const unlockSchedulesBtn = document.getElementById("unlockSchedulesBtn");
 const lockErrorEl = document.getElementById("lockError");
 
 const SCHEDULES_PASSWORD = "010";
-let schedulesUnlocked = false;
 
 let slotCounter = 0;
 const logEntries = [];
-let editingCard = null; // which slot card's custom-graph the modal is currently editing
+let editingCard = null;
 
 // ==========================================
 // TABS
@@ -170,6 +222,21 @@ function renderLogs() {
 }
 
 // ==========================================
+// PANEL CALL — always through the hardcoded proxy
+// ==========================================
+async function callPanelAPI(baseUrl, apiKey, actionParams) {
+  const params = { key: apiKey, ...actionParams };
+  const res = await fetch(PROXY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ baseUrl, params }),
+  });
+  const data = await res.json();
+  if (data && data.error) throw new Error(data.error);
+  return data;
+}
+
+// ==========================================
 // PANEL CONNECT
 // ==========================================
 connectBtn.addEventListener("click", async () => {
@@ -205,10 +272,7 @@ connectBtn.addEventListener("click", async () => {
     connectStatusEl.className = "connect-status ok";
     addLog(`Connected to panel at ${baseUrl}`);
   } catch (err) {
-    const usingProxy = !!proxyUrlInput.value.trim();
-    connectStatusEl.textContent = usingProxy
-      ? `Proxy couldn't reach that panel: ${err.message}. Check the panel URL/key, and that the proxy server is actually running.`
-      : "Couldn't reach that panel directly from the browser (CORS block). Fill in the Proxy server URL field above and make sure proxy-server is running — see the included README.";
+    connectStatusEl.textContent = `Couldn't get a valid response from that panel (${err.message}). Double-check the URL/key and try again — sometimes the proxy just needs a retry.`;
     connectStatusEl.className = "connect-status error";
     addLog(`Connect failed for ${baseUrl}`);
   }
@@ -230,6 +294,8 @@ function groupServicesByCategory(list) {
       id: svc.service,
       name: svc.name,
       rate: parseFloat(svc.rate) / 1000 || 0.01,
+      min: parseInt(svc.min, 10) || 1,
+      max: parseInt(svc.max, 10) || 1000000,
     });
   });
   return groups;
@@ -273,6 +339,32 @@ function capitalize(str) {
 }
 
 // ==========================================
+// GRAPH SELECT (built-in presets + saved custom curves)
+// ==========================================
+function populateGraphSelect(select, currentValue) {
+  const builtIns = Object.entries(GRAPH_PRESETS)
+    .map(([key, preset]) => `<option value="${key}">${preset.name}</option>`)
+    .join("");
+
+  const savedOptions = SAVED_GRAPHS.map(
+    (g, i) => `<option value="saved_${i}">💾 ${g.name}</option>`
+  ).join("");
+
+  select.innerHTML =
+    builtIns +
+    (savedOptions ? `<optgroup label="My saved curves">${savedOptions}</optgroup>` : "") +
+    `<option value="custom">Custom (edit below)</option>`;
+
+  if (currentValue) select.value = currentValue;
+}
+
+function refreshAllGraphSelects() {
+  servicesContainer.querySelectorAll(".graph-select").forEach((select) => {
+    populateGraphSelect(select, select.value);
+  });
+}
+
+// ==========================================
 // CREATE A NEW SERVICE SLOT
 // ==========================================
 function createServiceSlot() {
@@ -283,7 +375,9 @@ function createServiceSlot() {
   card.dataset.id = slotCounter;
   card.dataset.selectedServiceId = "";
   card.dataset.selectedRate = "0";
-  card.customGraphPoints = null; // per-slot custom curve override, set when user saves one for this slot
+  card.dataset.selectedMin = "1";
+  card.dataset.selectedMax = "1000000";
+  card.customGraphPoints = null;
 
   servicesContainer.appendChild(card);
   card.querySelector(".slot-label").textContent = `Slot ${slotCounter}`;
@@ -300,6 +394,7 @@ function createServiceSlot() {
   const editGraphBtn = card.querySelector(".edit-graph-btn");
 
   populateCategorySelect(categorySelect);
+  populateGraphSelect(graphSelect, "organic1");
 
   function renderDropdown(query) {
     const category = categorySelect.value;
@@ -313,9 +408,10 @@ function createServiceSlot() {
       ? filtered
           .map(
             (svc) => `
-            <div class="service-option" data-id="${svc.id}" data-rate="${svc.rate}" data-name="${svc.name}">
+            <div class="service-option" data-id="${svc.id}" data-rate="${svc.rate}" data-name="${svc.name}" data-min="${svc.min}" data-max="${svc.max}">
               <span class="opt-id">#${svc.id}</span>${svc.name}
               <span class="opt-rate">$${svc.rate.toFixed(3)}/unit</span>
+              <br><span class="opt-limits">Min ${svc.min.toLocaleString()} · Max ${svc.max.toLocaleString()}</span>
             </div>
           `
           )
@@ -324,11 +420,13 @@ function createServiceSlot() {
     dropdown.classList.add("open");
   }
 
-  function selectService(id, rate, name) {
+  function selectService(id, rate, name, min, max) {
     card.dataset.selectedServiceId = id;
     card.dataset.selectedRate = rate;
+    card.dataset.selectedMin = min;
+    card.dataset.selectedMax = max;
     searchInput.value = `#${id} — ${name}`;
-    noteEl.textContent = `Selected: ${name} · $${parseFloat(rate).toFixed(3)}/unit`;
+    noteEl.innerHTML = `Selected: ${name} · $${parseFloat(rate).toFixed(3)}/unit<br><b>Min ${parseInt(min).toLocaleString()} · Max ${parseInt(max).toLocaleString()}</b>`;
     noteEl.classList.add("filled");
     dropdown.classList.remove("open");
     refreshEverything();
@@ -344,12 +442,14 @@ function createServiceSlot() {
   dropdown.addEventListener("click", (e) => {
     const opt = e.target.closest(".service-option");
     if (!opt || !opt.dataset.id) return;
-    selectService(opt.dataset.id, opt.dataset.rate, opt.dataset.name);
+    selectService(opt.dataset.id, opt.dataset.rate, opt.dataset.name, opt.dataset.min, opt.dataset.max);
   });
 
   categorySelect.addEventListener("change", () => {
     card.dataset.selectedServiceId = "";
     card.dataset.selectedRate = "0";
+    card.dataset.selectedMin = "1";
+    card.dataset.selectedMax = "1000000";
     searchInput.value = "";
     noteEl.textContent = "No service selected yet";
     noteEl.classList.remove("filled");
@@ -384,10 +484,14 @@ function createServiceSlot() {
 // ==========================================
 function getCurveForCard(card) {
   const graphSelect = card.querySelector(".graph-select");
-  if (graphSelect.value === "custom") {
-    return card.customGraphPoints || CUSTOM_GRAPH_POINTS;
+  const value = graphSelect.value;
+
+  if (value === "custom") return card.customGraphPoints || Array(20).fill(50);
+  if (value.startsWith("saved_")) {
+    const idx = parseInt(value.split("_")[1], 10);
+    return (SAVED_GRAPHS[idx] && SAVED_GRAPHS[idx].points) || Array(20).fill(50);
   }
-  return GRAPH_PRESETS[graphSelect.value].points;
+  return (GRAPH_PRESETS[value] && GRAPH_PRESETS[value].points) || Array(20).fill(50);
 }
 
 function jitter(value, percent) {
@@ -395,13 +499,37 @@ function jitter(value, percent) {
   return value + (Math.random() * 2 - 1) * range;
 }
 
-function generateLegs(quantity, durationHours, randomness, curvePoints) {
-  const legs = [];
+// Merge any leg below the service's minimum into a neighboring leg,
+// so every leg that actually gets sent to the panel meets its minimum.
+function enforceMinimum(legs, minQty) {
+  if (!minQty || minQty <= 1) return legs;
+
+  let arr = legs.map((l) => ({ ...l }));
+  let changed = true;
+
+  while (changed && arr.length > 1) {
+    changed = false;
+    for (let i = 0; i < arr.length; i++) {
+      if (arr[i].amount > 0 && arr[i].amount < minQty) {
+        const j = i < arr.length - 1 ? i + 1 : i - 1;
+        arr[j].amount += arr[i].amount;
+        arr.splice(i, 1);
+        changed = true;
+        break;
+      }
+    }
+  }
+
+  arr.forEach((l, idx) => (l.index = idx + 1));
+  return arr;
+}
+
+function generateLegs(quantity, durationHours, randomness, curvePoints, minQty) {
+  let legs = [];
 
   if (randomness >= 40) {
-    // FULL RANDOM MODE — irregular amounts, irregular intervals, spread over 12-24h
     const totalMinutes = (12 + Math.random() * 12) * 60;
-    const legCount = 14 + Math.floor(Math.random() * 14); // ~14-28 legs
+    const legCount = 14 + Math.floor(Math.random() * 14);
 
     const rawWeights = Array.from({ length: legCount }, () => Math.random() + 0.15);
     const weightSum = rawWeights.reduce((a, b) => a + b, 0);
@@ -421,7 +549,6 @@ function generateLegs(quantity, durationHours, randomness, curvePoints) {
       legs.push({ index: i + 1, amount: Math.max(0, amount), minutesAt: times[i] });
     });
   } else {
-    // CURVE MODE — follow the selected shape, with a small jitter for realism
     const weightSum = curvePoints.reduce((a, b) => a + b, 0) || 1;
     let remaining = quantity;
     const totalMinutes = durationHours * 60;
@@ -435,12 +562,13 @@ function generateLegs(quantity, durationHours, randomness, curvePoints) {
       legs.push({ index: i + 1, amount, minutesAt });
     });
 
-    // fix rounding drift on the final leg so totals always match exactly
     const sumSoFar = legs.reduce((a, l) => a + l.amount, 0);
     legs[legs.length - 1].amount += quantity - sumSoFar;
   }
 
-  return legs.filter((l) => l.amount > 0);
+  legs = legs.filter((l) => l.amount > 0);
+  legs = enforceMinimum(legs, minQty);
+  return legs;
 }
 
 // ==========================================
@@ -453,24 +581,38 @@ function updateCardPreview(card) {
   const randomnessInput = card.querySelector(".randomness");
   const previewBox = card.querySelector(".legs-preview");
   const previewCostEl = card.querySelector(".preview-cost");
+  const qtyWarningEl = card.querySelector(".qty-warning");
 
-  const serviceLabel = capitalize(categorySelect.value || "service");
+  const category = categorySelect.value || "views";
+  const serviceLabel = capitalize(category);
   const rate = parseFloat(card.dataset.selectedRate) || 0;
+  const minQty = parseInt(card.dataset.selectedMin, 10) || 1;
+  const maxQty = parseInt(card.dataset.selectedMax, 10) || 1000000;
+
   const quantity = Math.max(0, parseInt(qtyInput.value, 10) || 0);
   const durationHours = Math.max(1, parseInt(durationInput.value, 10) || 24);
   const randomness = Math.min(40, Math.max(1, parseInt(randomnessInput.value, 10) || 1));
 
+  if (quantity > 0 && quantity < minQty) {
+    qtyWarningEl.textContent = `Below this service's minimum of ${minQty.toLocaleString()} — the panel will reject this order.`;
+  } else if (quantity > maxQty) {
+    qtyWarningEl.textContent = `Above this service's maximum of ${maxQty.toLocaleString()}.`;
+  } else {
+    qtyWarningEl.textContent = "";
+  }
+
   const curvePoints = getCurveForCard(card);
-  const legs = generateLegs(quantity, durationHours, randomness, curvePoints).map((l) => ({
+  const legs = generateLegs(quantity, durationHours, randomness, curvePoints, minQty).map((l) => ({
     ...l,
     serviceLabel,
+    category,
   }));
 
   previewBox.innerHTML = legs
     .map(
       (leg) => `
       <div class="leg-row">
-        <span class="leg-dot"></span>
+        <span class="leg-dot" style="background:${colorForCategory(category)}"></span>
         <span class="leg-label">Leg ${leg.index}</span>
         <span class="leg-amount">${leg.amount.toLocaleString()} ${serviceLabel}</span>
         <span class="leg-time mono">${formatMinutes(leg.minutesAt)}</span>
@@ -482,7 +624,7 @@ function updateCardPreview(card) {
   const cost = quantity * rate;
   previewCostEl.textContent = `$${cost.toFixed(2)}`;
 
-  return { serviceLabel, quantity, cost, legs, serviceId: card.dataset.selectedServiceId };
+  return { serviceLabel, category, quantity, cost, legs, serviceId: card.dataset.selectedServiceId };
 }
 
 function formatMinutes(mins) {
@@ -510,7 +652,6 @@ function updateSummary() {
 
   totalQtyEl.textContent = totalQty.toLocaleString();
   totalCostEl.textContent = `$${totalCost.toFixed(2)}`;
-  graphBigNumEl.textContent = totalQty.toLocaleString();
 }
 
 // ==========================================
@@ -545,41 +686,71 @@ function updateSchedule(allLegs) {
 }
 
 // ==========================================
-// GROWTH GRAPH
+// GROWTH GRAPH — one colored line per category
 // ==========================================
-function updateGraph(allLegs) {
-  const line = document.getElementById("graphLine");
-  const fill = document.getElementById("graphFill");
-  const width = 600, height = 120, padding = 8;
+function drawMultiLineGraph(linesGroupEl, legendEl, legsByCategory, width, height, padding) {
+  linesGroupEl.innerHTML = "";
+  legendEl.innerHTML = "";
 
-  if (allLegs.length === 0) {
+  const categories = Object.keys(legsByCategory);
+  if (categories.length === 0) {
     const flatY = height - padding;
-    line.setAttribute("d", `M ${padding} ${flatY} L ${width - padding} ${flatY}`);
-    fill.setAttribute("d", `M ${padding} ${flatY} L ${width - padding} ${flatY} L ${width - padding} ${height} L ${padding} ${height} Z`);
+    linesGroupEl.innerHTML = `<line x1="${padding}" y1="${flatY}" x2="${width - padding}" y2="${flatY}" stroke="#2a2a2e" stroke-width="1"></line>`;
     return;
   }
 
-  const sorted = [...allLegs].sort((a, b) => a.minutesAt - b.minutesAt);
-  let cumulative = 0;
-  const points = sorted.map((leg) => {
-    cumulative += leg.amount;
-    return { t: leg.minutesAt, v: cumulative };
+  // find a shared max so all lines plot on the same scale
+  let maxT = 1;
+  let maxV = 1;
+  const cumulativeByCategory = {};
+
+  categories.forEach((cat) => {
+    const sorted = [...legsByCategory[cat]].sort((a, b) => a.minutesAt - b.minutesAt);
+    let cumulative = 0;
+    const points = sorted.map((leg) => {
+      cumulative += leg.amount;
+      return { t: leg.minutesAt, v: cumulative };
+    });
+    cumulativeByCategory[cat] = points;
+    maxT = Math.max(maxT, ...points.map((p) => p.t));
+    maxV = Math.max(maxV, ...points.map((p) => p.v));
   });
 
-  const maxT = Math.max(...points.map((p) => p.t), 1);
-  const maxV = Math.max(...points.map((p) => p.v), 1);
   const toXY = (p) => [
     padding + (p.t / maxT) * (width - padding * 2),
     height - padding - (p.v / maxV) * (height - padding * 2),
   ];
 
-  const coords = points.map(toXY);
-  let linePath = `M ${coords[0][0]} ${coords[0][1]}`;
-  coords.slice(1).forEach(([x, y]) => (linePath += ` L ${x} ${y}`));
-  const fillPath = `${linePath} L ${coords[coords.length - 1][0]} ${height} L ${coords[0][0]} ${height} Z`;
+  categories.forEach((cat) => {
+    const points = cumulativeByCategory[cat];
+    const coords = points.map(toXY);
+    let d = `M ${coords[0][0]} ${coords[0][1]}`;
+    coords.slice(1).forEach(([x, y]) => (d += ` L ${x} ${y}`));
 
-  line.setAttribute("d", linePath);
-  fill.setAttribute("d", fillPath);
+    const color = colorForCategory(cat);
+    linesGroupEl.innerHTML += `<path d="${d}" fill="none" stroke="${color}" stroke-width="2"></path>`;
+
+    const total = points[points.length - 1].v;
+    legendEl.innerHTML += `
+      <div class="legend-item">
+        <span class="legend-dot" style="background:${color}"></span>
+        ${capitalize(cat)} <span class="legend-num">${total.toLocaleString()}</span>
+      </div>
+    `;
+  });
+}
+
+function updateGraph(allLegs) {
+  const linesGroup = document.getElementById("graphLinesGroup");
+  const legend = document.getElementById("graphLegend");
+
+  const legsByCategory = {};
+  allLegs.forEach((leg) => {
+    if (!legsByCategory[leg.category]) legsByCategory[leg.category] = [];
+    legsByCategory[leg.category].push(leg);
+  });
+
+  drawMultiLineGraph(linesGroup, legend, legsByCategory, 600, 120, 8);
 }
 
 // ==========================================
@@ -604,7 +775,8 @@ function refreshEverything() {
 // ==========================================
 function openGraphModal(card) {
   editingCard = card;
-  const points = card.customGraphPoints ? [...card.customGraphPoints] : [...CUSTOM_GRAPH_POINTS];
+  const points = card.customGraphPoints ? [...card.customGraphPoints] : Array(20).fill(50);
+  customGraphNameInput.value = "";
   renderGraphEditor(points);
   graphModal.classList.add("open");
 }
@@ -620,16 +792,12 @@ function renderGraphEditor(points) {
   };
 
   function pathD() {
-    return points
-      .map((v, i) => `${i === 0 ? "M" : "L"} ${padding + i * stepX} ${valueToY(v)}`)
-      .join(" ");
+    return points.map((v, i) => `${i === 0 ? "M" : "L"} ${padding + i * stepX} ${valueToY(v)}`).join(" ");
   }
 
   function draw() {
     const dots = points
-      .map(
-        (v, i) => `<circle class="graph-dot" data-index="${i}" cx="${padding + i * stepX}" cy="${valueToY(v)}" r="7"></circle>`
-      )
+      .map((v, i) => `<circle class="graph-dot" data-index="${i}" cx="${padding + i * stepX}" cy="${valueToY(v)}" r="7"></circle>`)
       .join("");
     customGraphSvg.innerHTML = `<path d="${pathD()}" fill="none" stroke="#ff2d43" stroke-width="2"></path>${dots}`;
     attachDragHandlers();
@@ -666,14 +834,23 @@ closeGraphModal.addEventListener("click", () => graphModal.classList.remove("ope
 
 saveGraphBtn.addEventListener("click", () => {
   const points = customGraphSvg._points;
-  if (editingCard) {
+  const name = customGraphNameInput.value.trim();
+
+  if (name) {
+    SAVED_GRAPHS.push({ name, points: [...points] });
+    saveSavedGraphs(SAVED_GRAPHS);
+    refreshAllGraphSelects();
+    if (editingCard) {
+      editingCard.querySelector(".graph-select").value = `saved_${SAVED_GRAPHS.length - 1}`;
+    }
+    addLog(`Saved custom curve "${name}" permanently on this device`);
+  } else if (editingCard) {
     editingCard.customGraphPoints = [...points];
     editingCard.querySelector(".graph-select").value = "custom";
-  } else {
-    CUSTOM_GRAPH_POINTS = [...points];
+    addLog("Applied a custom curve to this slot (not saved — no name given)");
   }
+
   graphModal.classList.remove("open");
-  addLog("Saved a custom delivery curve");
   refreshEverything();
 });
 
@@ -691,16 +868,22 @@ submitOrderBtn.addEventListener("click", () => {
     return;
   }
 
+  if (!link) {
+    orderStatusEl.textContent = "Add a target link first.";
+    orderStatusEl.className = "connect-status error";
+    return;
+  }
+
   let scheduledLegCount = 0;
 
   cards.forEach((card) => {
-    const { legs, serviceLabel, serviceId } = updateCardPreview(card);
+    const { legs, serviceLabel, category, serviceId } = updateCardPreview(card);
     legs.forEach((leg) => {
       scheduledLegCount += 1;
       const fireInMs = leg.minutesAt * 60000;
       const fireAtClock = new Date(Date.now() + fireInMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-      setTimeout(() => placeLeg(serviceId, serviceLabel, leg.amount, link, fireAtClock), fireInMs);
+      setTimeout(() => placeLeg(serviceId, serviceLabel, category, leg.amount, link, fireAtClock), fireInMs);
       addLog(`Queued ${leg.amount.toLocaleString()} ${serviceLabel} for ${fireAtClock}`);
     });
   });
@@ -712,9 +895,10 @@ submitOrderBtn.addEventListener("click", () => {
   addLog(`Order created — "${name}" (${scheduledLegCount} legs)`);
 });
 
-async function placeLeg(serviceId, serviceLabel, amount, link, clockLabel) {
+async function placeLeg(serviceId, serviceLabel, category, amount, link, clockLabel) {
   if (!PANEL.connected || !serviceId) {
     addLog(`(Simulated) Delivered ${amount.toLocaleString()} ${serviceLabel} at ${clockLabel}`);
+    recordDelivery(link, category, amount);
     return;
   }
   try {
@@ -725,76 +909,53 @@ async function placeLeg(serviceId, serviceLabel, amount, link, clockLabel) {
       quantity: amount,
     });
     addLog(`Placed ${amount.toLocaleString()} ${serviceLabel} at ${clockLabel} — order #${data.order || "?"}`);
+    recordDelivery(link, category, amount);
   } catch (err) {
     addLog(`Failed to place ${amount.toLocaleString()} ${serviceLabel} at ${clockLabel} — ${err.message}`);
   }
 }
 
 // ==========================================
-// TRACKER TAB
+// TRACKER TAB — real saved history only
 // ==========================================
-let trackerInterval = null;
-let trackerViewsData = [];
-let trackerLikesData = [];
-
 trackBtn.addEventListener("click", () => {
   const link = trackerLinkInput.value.trim();
+  const linesGroup = document.getElementById("trackerLinesGroup");
+  const legend = document.getElementById("trackerLegend");
+
   if (!link) return;
 
-  if (trackerInterval) clearInterval(trackerInterval);
-  trackerViewsData = [0];
-  trackerLikesData = [0];
-  addLog(`Started tracking ${link} (simulated)`);
+  const entries = getHistoryForLink(link);
 
-  trackerInterval = setInterval(() => {
-    const lastViews = trackerViewsData[trackerViewsData.length - 1];
-    const lastLikes = trackerLikesData[trackerLikesData.length - 1];
-
-    trackerViewsData.push(lastViews + Math.round(20 + Math.random() * 80));
-    trackerLikesData.push(lastLikes + Math.round(2 + Math.random() * 12));
-
-    if (trackerViewsData.length > 40) {
-      trackerViewsData.shift();
-      trackerLikesData.shift();
-    }
-
-    trackerViewsNumEl.textContent = trackerViewsData[trackerViewsData.length - 1].toLocaleString();
-    trackerLikesNumEl.textContent = trackerLikesData[trackerLikesData.length - 1].toLocaleString();
-    drawTrackerGraph();
-  }, 2000);
-});
-
-function drawTrackerGraph() {
-  const width = 600, height = 140, padding = 8;
-  const viewsLine = document.getElementById("trackerViewsLine");
-  const likesLine = document.getElementById("trackerLikesLine");
-
-  function buildPath(data) {
-    const max = Math.max(...data, 1);
-    const stepX = (width - padding * 2) / Math.max(1, data.length - 1);
-    return data
-      .map((v, i) => {
-        const x = padding + i * stepX;
-        const y = height - padding - (v / max) * (height - padding * 2);
-        return `${i === 0 ? "M" : "L"} ${x} ${y}`;
-      })
-      .join(" ");
+  if (entries.length === 0) {
+    linesGroup.innerHTML = "";
+    legend.innerHTML = "";
+    trackerEmptyEl.style.display = "block";
+    trackerEmptyEl.textContent = "No delivery history found for this link in the last 7 days — place an order first.";
+    return;
   }
 
-  const combinedMax = Math.max(...trackerViewsData, 1);
-  viewsLine.setAttribute("d", buildPath(trackerViewsData));
+  trackerEmptyEl.style.display = "none";
 
-  // scale likes against the same max as views isn't ideal since likes are smaller;
-  // draw likes on its own scale so the shape is still visible
-  likesLine.setAttribute("d", buildPath(trackerLikesData));
-}
+  const legsByCategory = {};
+  entries.forEach((entry) => {
+    if (!legsByCategory[entry.category]) legsByCategory[entry.category] = [];
+    // reuse the same drawing function: it expects {minutesAt, amount}
+    legsByCategory[entry.category].push({
+      minutesAt: Math.round((entry.timestamp - entries[0].timestamp) / 60000),
+      amount: entry.amount,
+    });
+  });
+
+  drawMultiLineGraph(linesGroup, legend, legsByCategory, 600, 140, 8);
+  addLog(`Viewed delivery history for ${link}`);
+});
 
 // ==========================================
 // SCHEDULES PASSWORD GATE
 // ==========================================
 unlockSchedulesBtn.addEventListener("click", () => {
   if (schedulesPasswordInput.value === SCHEDULES_PASSWORD) {
-    schedulesUnlocked = true;
     schedulesLocked.style.display = "none";
     schedulesContent.style.display = "block";
     lockErrorEl.textContent = "";
@@ -820,6 +981,7 @@ addServiceBtn.addEventListener("click", () => {
   refreshEverything();
 });
 
+pruneOldHistory();
 addLog("Session started");
 createServiceSlot();
 refreshEverything();
