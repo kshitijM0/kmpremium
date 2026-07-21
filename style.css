@@ -316,6 +316,7 @@ body{
 .service-option:hover{ background: var(--red-soft); }
 .service-option .opt-id{ color: var(--muted); font-family: var(--font-mono); font-size: 0.72rem; margin-right: 6px; }
 .service-option .opt-rate{ float:right; color: var(--red); font-family: var(--font-mono); font-size: 0.72rem; }
+.service-option .opt-limits{ color: var(--muted); font-size: 0.7rem; }
 
 .selected-service-note{
   font-size: 0.76rem;
@@ -683,6 +684,39 @@ input[type="range"].randomness::-moz-range-thumb{
 .lock-title{ font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; margin-bottom: 16px; }
 .lock-card .input.full{ margin-bottom: 12px; text-align:center; }
 .lock-error{ color: var(--red); font-size: 0.8rem; margin-top: 10px; min-height: 1.1em; }
+
+.qty-warning{
+  display:block;
+  font-size: 0.74rem;
+  color: var(--red);
+  margin-top: 4px;
+  min-height: 1.1em;
+}
+
+/* ---------- GRAPH LEGEND ---------- */
+.graph-legend{
+  display:flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 10px;
+}
+
+.legend-item{
+  display:flex;
+  align-items:center;
+  gap: 7px;
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.legend-dot{
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display:inline-block;
+}
+
+.legend-num{ color: var(--muted); font-family: var(--font-mono); font-size: 0.76rem; }
 
 /* ---------- RESPONSIVE ---------- */
 @media (max-width: 480px){
