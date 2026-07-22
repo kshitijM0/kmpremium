@@ -2,6 +2,7 @@
 // HARDCODED PROXY — no user-facing field needed
 // ==========================================
 const PROXY_URL = "https://kmpanel.onrender.com/proxy";
+const PROXY_ORIGIN = PROXY_URL.replace(/\/proxy$/, "");
 
 // ==========================================
 // CATEGORY COLORS (used everywhere a category shows on a graph)
@@ -857,7 +858,7 @@ saveGraphBtn.addEventListener("click", () => {
 // ==========================================
 // ORDER CREATION / SCHEDULING
 // ==========================================
-submitOrderBtn.addEventListener("click", () => {
+submitOrderBtn.addEventListener("click", async () => {
   const cards = servicesContainer.querySelectorAll(".service-card");
   const link = document.getElementById("targetLink").value.trim();
   const name = document.getElementById("scheduleName").value.trim() || "Untitled schedule";
@@ -874,58 +875,88 @@ submitOrderBtn.addEventListener("click", () => {
     return;
   }
 
-  let scheduledLegCount = 0;
-
+  const allLegsForOrder = [];
   cards.forEach((card) => {
     const { legs, serviceLabel, category, serviceId } = updateCardPreview(card);
     legs.forEach((leg) => {
-      scheduledLegCount += 1;
-      const fireInMs = leg.minutesAt * 60000;
-      const fireAtClock = new Date(Date.now() + fireInMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-      setTimeout(() => placeLeg(serviceId, serviceLabel, category, leg.amount, link, fireAtClock), fireInMs);
+      allLegsForOrder.push({
+        serviceId,
+        link,
+        quantity: leg.amount,
+        category,
+        serviceLabel,
+        fireInMs: leg.minutesAt * 60000,
+      });
+      const fireAtClock = new Date(Date.now() + leg.minutesAt * 60000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       addLog(`Queued ${leg.amount.toLocaleString()} ${serviceLabel} for ${fireAtClock}`);
     });
   });
 
-  orderStatusEl.textContent = PANEL.connected
-    ? `Schedule "${name}" created — ${scheduledLegCount} legs queued while this tab stays open.`
-    : `Schedule "${name}" created in demo mode (no panel connected) — ${scheduledLegCount} legs queued while this tab stays open.`;
-  orderStatusEl.className = "connect-status ok";
-  addLog(`Order created — "${name}" (${scheduledLegCount} legs)`);
+  if (PANEL.connected) {
+    // Real panel connected — hand the whole schedule to the server so it
+    // keeps firing even if this tab gets closed.
+    orderStatusEl.textContent = "Sending schedule to the server...";
+    orderStatusEl.className = "connect-status";
+    try {
+      const res = await fetch(`${PROXY_ORIGIN}/schedule-order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseUrl: PANEL.baseUrl, apiKey: PANEL.apiKey, legs: allLegsForOrder }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      orderStatusEl.textContent = `Schedule "${name}" is now running on the server (${data.scheduled} legs) — safe to close this tab, delivery continues.`;
+      orderStatusEl.className = "connect-status ok";
+      addLog(`Order "${name}" handed off to server scheduler (${data.scheduled} legs)`);
+    } catch (err) {
+      orderStatusEl.textContent = `Couldn't hand the schedule to the server: ${err.message}`;
+      orderStatusEl.className = "connect-status error";
+      addLog(`Failed to schedule order "${name}" on the server`);
+    }
+  } else {
+    // No real panel connected — simulate locally in this tab (demo mode).
+    allLegsForOrder.forEach((leg) => {
+      setTimeout(
+        () => simulateDeliverLeg(leg.serviceLabel, leg.category, leg.quantity, leg.link),
+        leg.fireInMs
+      );
+    });
+    orderStatusEl.textContent = `Schedule "${name}" created in demo mode (no panel connected) — ${allLegsForOrder.length} legs will simulate locally while this tab stays open.`;
+    orderStatusEl.className = "connect-status ok";
+    addLog(`Order created — "${name}" (${allLegsForOrder.length} legs, demo mode)`);
+  }
 });
 
-async function placeLeg(serviceId, serviceLabel, category, amount, link, clockLabel) {
-  if (!PANEL.connected || !serviceId) {
-    addLog(`(Simulated) Delivered ${amount.toLocaleString()} ${serviceLabel} at ${clockLabel}`);
-    recordDelivery(link, category, amount);
-    return;
-  }
-  try {
-    const data = await callPanelAPI(PANEL.baseUrl, PANEL.apiKey, {
-      action: "add",
-      service: serviceId,
-      link,
-      quantity: amount,
-    });
-    addLog(`Placed ${amount.toLocaleString()} ${serviceLabel} at ${clockLabel} — order #${data.order || "?"}`);
-    recordDelivery(link, category, amount);
-  } catch (err) {
-    addLog(`Failed to place ${amount.toLocaleString()} ${serviceLabel} at ${clockLabel} — ${err.message}`);
-  }
+function simulateDeliverLeg(serviceLabel, category, amount, link) {
+  addLog(`(Simulated) Delivered ${amount.toLocaleString()} ${serviceLabel}`);
+  recordDelivery(link, category, amount);
 }
 
 // ==========================================
 // TRACKER TAB — real saved history only
 // ==========================================
-trackBtn.addEventListener("click", () => {
+trackBtn.addEventListener("click", async () => {
   const link = trackerLinkInput.value.trim();
   const linesGroup = document.getElementById("trackerLinesGroup");
   const legend = document.getElementById("trackerLegend");
 
   if (!link) return;
 
-  const entries = getHistoryForLink(link);
+  trackerEmptyEl.style.display = "block";
+  trackerEmptyEl.textContent = "Loading...";
+
+  const localEntries = getHistoryForLink(link);
+  let serverEntries = [];
+
+  try {
+    const res = await fetch(`${PROXY_ORIGIN}/history?link=${encodeURIComponent(link)}`);
+    if (res.ok) serverEntries = await res.json();
+  } catch {
+    // server unreachable — fall back to local-only history silently
+  }
+
+  const entries = [...localEntries, ...serverEntries].sort((a, b) => a.timestamp - b.timestamp);
 
   if (entries.length === 0) {
     linesGroup.innerHTML = "";
@@ -940,7 +971,6 @@ trackBtn.addEventListener("click", () => {
   const legsByCategory = {};
   entries.forEach((entry) => {
     if (!legsByCategory[entry.category]) legsByCategory[entry.category] = [];
-    // reuse the same drawing function: it expects {minutesAt, amount}
     legsByCategory[entry.category].push({
       minutesAt: Math.round((entry.timestamp - entries[0].timestamp) / 60000),
       amount: entry.amount,
