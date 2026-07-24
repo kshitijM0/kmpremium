@@ -450,13 +450,14 @@ body{
 
 .schedule-row{
   display:grid;
-  grid-template-columns: 70px 1fr 70px 80px;
+  grid-template-columns: 100px 1fr 110px 1.6fr;
   align-items:center;
   gap: 10px;
   padding: 12px 16px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
-  font-size: 0.82rem;
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
 }
 
 .schedule-row:last-child{ border-bottom: none; }
@@ -691,6 +692,15 @@ input[type="range"].randomness::-moz-range-thumb{
   color: var(--red);
   margin-top: 4px;
   min-height: 1.1em;
+}
+
+.sync-block{ margin-top: 4px; }
+
+.tracker-note{
+  font-size: 0.76rem;
+  color: var(--muted);
+  font-style: italic;
+  margin: 10px 0 0;
 }
 
 /* ---------- GRAPH LEGEND ---------- */
