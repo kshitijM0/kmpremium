@@ -54,6 +54,13 @@
 
         <button id="connectBtn" class="submit-btn">Connect</button>
         <div id="connectStatus" class="connect-status"></div>
+
+        <div class="help-contact-box">
+          <span class="field-label">Need help connecting?</span>
+          <div class="help-contact-row">📱 Telegram: <a href="https://t.me/kshitijM1" target="_blank" rel="noopener">@kshitijM1</a></div>
+          <div class="help-contact-row">📸 Instagram: <a href="https://www.instagram.com/goatz09/" target="_blank" rel="noopener">@goatz09</a></div>
+          <div class="help-contact-row">📧 Email: <a href="mailto:lazydatat@gmail.com">lazydatat@gmail.com</a></div>
+        </div>
       </div>
 
       <div class="api-card">
@@ -89,6 +96,11 @@
         <div class="section-title"><span class="card-icon">🧩</span> Services</div>
 
         <div id="servicesContainer" class="services-container"></div>
+
+        <label class="sync-toggle-row">
+          <input type="checkbox" id="syncNewSlotToggle">
+          🔗 Sync new slot with the previous one
+        </label>
 
         <button id="addServiceBtn" class="add-slot-btn">+ Add slot</button>
 
@@ -214,6 +226,7 @@
 
     <div class="slot-head">
       <span class="slot-label">Slot</span>
+      <span class="sync-badge" style="display:none;"></span>
       <button class="remove-btn" title="Remove slot">✕</button>
     </div>
 
@@ -261,14 +274,6 @@
         </select>
         <button class="edit-graph-btn">Edit</button>
       </div>
-    </div>
-
-    <div class="field-block sync-block">
-      <span class="field-label">Sync timing with</span>
-      <select class="input full sync-select">
-        <option value="">No sync — use its own curve</option>
-      </select>
-      <span class="randomness-caption">When synced, this slot's delivery fires at exactly the same times as the slot it's synced to.</span>
     </div>
 
     <div class="preview-head">
