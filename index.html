@@ -146,6 +146,7 @@
         </svg>
         <div id="trackerLegend" class="graph-legend"></div>
         <div id="trackerEmpty" class="summary-empty">Enter a link and click "Show history".</div>
+        <p class="tracker-note">⚠️ Still improving — tracking accuracy may not be fully reliable yet.</p>
       </div>
     </section>
 
@@ -153,7 +154,7 @@
     <section class="panel" id="tab-schedules">
       <div class="panel-head">
         <h1>Schedules</h1>
-        <p>Every leg from every service slot, merged into one delivery timeline.</p>
+        <p>Who's connecting through this panel, and what they're ordering — server-side log.</p>
       </div>
 
       <div id="schedulesLocked" class="lock-card">
@@ -165,8 +166,9 @@
       </div>
 
       <div id="schedulesContent" style="display:none;">
-        <div id="scheduleTable" class="schedule-table">
-          <div class="summary-empty">No scheduled legs yet — add a service in the Order tab.</div>
+        <button id="refreshActivityBtn" class="add-slot-btn" style="margin-bottom:14px;">↻ Refresh</button>
+        <div id="activityLogTable" class="schedule-table">
+          <div class="summary-empty">Loading...</div>
         </div>
       </div>
     </section>
@@ -178,6 +180,12 @@
         <p>Every action taken in this session, most recent first.</p>
       </div>
       <div id="logsList" class="logs-list"></div>
+
+      <div class="panel-head" style="margin-top:26px;">
+        <h1 style="font-size:1.1rem;">Delivery history</h1>
+        <p>What actually got delivered, when, and to which link — saved on this device.</p>
+      </div>
+      <div id="deliveryHistoryList" class="logs-list"></div>
     </section>
 
   </main>
@@ -253,6 +261,14 @@
         </select>
         <button class="edit-graph-btn">Edit</button>
       </div>
+    </div>
+
+    <div class="field-block sync-block">
+      <span class="field-label">Sync timing with</span>
+      <select class="input full sync-select">
+        <option value="">No sync — use its own curve</option>
+      </select>
+      <span class="randomness-caption">When synced, this slot's delivery fires at exactly the same times as the slot it's synced to.</span>
     </div>
 
     <div class="preview-head">
