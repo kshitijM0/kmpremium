@@ -46,6 +46,25 @@ const DEMO_CATALOG = {
 let CATALOG = DEMO_CATALOG;
 let PANEL = { baseUrl: "", apiKey: "", connected: false };
 
+const CREDENTIALS_KEY = "km_panel_credentials";
+
+function saveCredentials(baseUrl, apiKey) {
+  try {
+    localStorage.setItem(CREDENTIALS_KEY, JSON.stringify({ baseUrl, apiKey }));
+  } catch {
+    /* storage unavailable — ignore */
+  }
+}
+
+function loadCredentials() {
+  try {
+    const raw = localStorage.getItem(CREDENTIALS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 // ==========================================
 // BUILT-IN DELIVERY CURVES (20 points each, weight 0-100)
 // ==========================================
@@ -148,7 +167,8 @@ const totalQtyEl = document.getElementById("totalQty");
 const totalCostEl = document.getElementById("totalCost");
 const balanceValueEl = document.getElementById("balanceValue");
 
-const scheduleTable = document.getElementById("scheduleTable");
+const activityLogTableEl = document.getElementById("activityLogTable");
+const refreshActivityBtn = document.getElementById("refreshActivityBtn");
 const logsList = document.getElementById("logsList");
 
 const tabButtons = document.querySelectorAll(".tab-btn");
@@ -195,8 +215,56 @@ tabButtons.forEach((btn) => {
     panels.forEach((p) => p.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
+    if (btn.dataset.tab === "logs") renderDeliveryHistory();
   });
 });
+
+async function renderDeliveryHistory() {
+  const el = document.getElementById("deliveryHistoryList");
+  el.innerHTML = `<div class="summary-empty">Loading...</div>`;
+
+  const history = loadHistory();
+  const cutoff = Date.now() - SEVEN_DAYS_MS;
+
+  const flat = [];
+  Object.keys(history).forEach((link) => {
+    history[link].forEach((entry) => {
+      if (entry.timestamp >= cutoff) flat.push({ ...entry, link });
+    });
+  });
+
+  try {
+    const res = await fetch(`${PROXY_ORIGIN}/delivered-log`);
+    if (res.ok) {
+      const serverEntries = await res.json();
+      flat.push(...serverEntries);
+    }
+  } catch {
+    // server unreachable — local history still shows below
+  }
+
+  flat.sort((a, b) => b.timestamp - a.timestamp);
+
+  if (flat.length === 0) {
+    el.innerHTML = `<div class="summary-empty">No deliveries recorded yet.</div>`;
+    return;
+  }
+
+  el.innerHTML = flat
+    .slice(0, 100)
+    .map((entry) => {
+      const time = new Date(entry.timestamp).toLocaleString([], {
+        month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+      });
+      return `
+        <div class="log-row">
+          <span class="log-time">${time}</span>
+          <span class="log-text">${entry.amount.toLocaleString()} ${capitalize(entry.category)} → ${entry.link}</span>
+        </div>
+      `;
+    })
+    .join("");
+}
 
 // ==========================================
 // LOGGING
@@ -240,18 +308,23 @@ async function callPanelAPI(baseUrl, apiKey, actionParams) {
 // ==========================================
 // PANEL CONNECT
 // ==========================================
-connectBtn.addEventListener("click", async () => {
-  const baseUrl = apiBaseUrlInput.value.trim();
-  const apiKey = apiKeyInputEl.value.trim();
+connectBtn.addEventListener("click", () => {
+  attemptConnect(apiBaseUrlInput.value.trim(), apiKeyInputEl.value.trim(), false);
+});
 
+async function attemptConnect(baseUrl, apiKey, silent) {
   if (!baseUrl) {
-    connectStatusEl.textContent = "Enter the panel's API URL first.";
-    connectStatusEl.className = "connect-status error";
+    if (!silent) {
+      connectStatusEl.textContent = "Enter the panel's API URL first.";
+      connectStatusEl.className = "connect-status error";
+    }
     return;
   }
 
-  connectStatusEl.textContent = "Connecting...";
-  connectStatusEl.className = "connect-status";
+  if (!silent) {
+    connectStatusEl.textContent = "Connecting...";
+    connectStatusEl.className = "connect-status";
+  }
 
   try {
     const balanceData = await callPanelAPI(baseUrl, apiKey, { action: "balance" });
@@ -269,15 +342,18 @@ connectBtn.addEventListener("click", async () => {
     }
 
     PANEL = { baseUrl, apiKey, connected: true };
+    saveCredentials(baseUrl, apiKey);
     connectStatusEl.textContent = "Connected — balance and services loaded.";
     connectStatusEl.className = "connect-status ok";
     addLog(`Connected to panel at ${baseUrl}`);
   } catch (err) {
-    connectStatusEl.textContent = `Couldn't get a valid response from that panel (${err.message}). Double-check the URL/key and try again — sometimes the proxy just needs a retry.`;
-    connectStatusEl.className = "connect-status error";
-    addLog(`Connect failed for ${baseUrl}`);
+    if (!silent) {
+      connectStatusEl.textContent = `Couldn't get a valid response from that panel (${err.message}). Double-check the URL/key and try again — sometimes the proxy just needs a retry.`;
+      connectStatusEl.className = "connect-status error";
+    }
+    addLog(`Connect failed for ${baseUrl}${silent ? " (auto-reconnect)" : ""}`);
   }
-});
+}
 
 function groupServicesByCategory(list) {
   const groups = {};
@@ -393,6 +469,7 @@ function createServiceSlot() {
   const randomnessReadout = card.querySelector(".randomness-readout");
   const graphSelect = card.querySelector(".graph-select");
   const editGraphBtn = card.querySelector(".edit-graph-btn");
+  const syncSelect = card.querySelector(".sync-select");
 
   populateCategorySelect(categorySelect);
   populateGraphSelect(graphSelect, "organic1");
@@ -470,14 +547,32 @@ function createServiceSlot() {
 
   editGraphBtn.addEventListener("click", () => openGraphModal(card));
 
+  syncSelect.addEventListener("change", () => refreshEverything());
+
   card.querySelector(".remove-btn").addEventListener("click", () => {
     card.remove();
     addLog(`Removed slot ${card.dataset.id}`);
+    refreshAllSyncSelects();
     refreshEverything();
   });
 
   updateCardPreview(card);
+  refreshAllSyncSelects();
   addLog(`Added slot ${slotCounter}`);
+}
+
+function refreshAllSyncSelects() {
+  const cards = [...servicesContainer.querySelectorAll(".service-card")];
+  cards.forEach((card) => {
+    const select = card.querySelector(".sync-select");
+    const previous = select.value;
+    const options = cards
+      .filter((c) => c !== card)
+      .map((c) => `<option value="${c.dataset.id}">${c.querySelector(".slot-label").textContent}</option>`)
+      .join("");
+    select.innerHTML = `<option value="">No sync — use its own curve</option>${options}`;
+    if ([...select.options].some((o) => o.value === previous)) select.value = previous;
+  });
 }
 
 // ==========================================
@@ -523,6 +618,20 @@ function enforceMinimum(legs, minQty) {
 
   arr.forEach((l, idx) => (l.index = idx + 1));
   return arr;
+}
+
+function generateSyncedLegs(quantity, minQty, referenceLegs) {
+  const weightSum = referenceLegs.reduce((a, l) => a + l.amount, 0) || 1;
+  let remaining = quantity;
+  let legs = referenceLegs.map((refLeg, i) => {
+    const isLast = i === referenceLegs.length - 1;
+    const amount = isLast ? remaining : Math.round((refLeg.amount / weightSum) * quantity);
+    remaining -= isLast ? 0 : amount;
+    return { index: i + 1, amount, minutesAt: refLeg.minutesAt };
+  });
+  legs = legs.filter((l) => l.amount > 0);
+  legs = enforceMinimum(legs, minQty);
+  return legs;
 }
 
 function generateLegs(quantity, durationHours, randomness, curvePoints, minQty) {
@@ -603,11 +712,23 @@ function updateCardPreview(card) {
   }
 
   const curvePoints = getCurveForCard(card);
-  const legs = generateLegs(quantity, durationHours, randomness, curvePoints, minQty).map((l) => ({
-    ...l,
-    serviceLabel,
-    category,
-  }));
+  const syncSelect = card.querySelector(".sync-select");
+  const syncTargetId = syncSelect ? syncSelect.value : "";
+  let legs;
+
+  if (syncTargetId) {
+    const targetCard = servicesContainer.querySelector(`.service-card[data-id="${syncTargetId}"]`);
+    if (targetCard && targetCard._lastLegs && targetCard._lastLegs.length > 0) {
+      legs = generateSyncedLegs(quantity, minQty, targetCard._lastLegs);
+    } else {
+      legs = generateLegs(quantity, durationHours, randomness, curvePoints, minQty);
+    }
+  } else {
+    legs = generateLegs(quantity, durationHours, randomness, curvePoints, minQty);
+  }
+
+  legs = legs.map((l) => ({ ...l, serviceLabel, category }));
+  card._lastLegs = legs;
 
   previewBox.innerHTML = legs
     .map(
@@ -653,37 +774,6 @@ function updateSummary() {
 
   totalQtyEl.textContent = totalQty.toLocaleString();
   totalCostEl.textContent = `$${totalCost.toFixed(2)}`;
-}
-
-// ==========================================
-// SCHEDULES
-// ==========================================
-function updateSchedule(allLegs) {
-  if (allLegs.length === 0) {
-    scheduleTable.innerHTML = `<div class="summary-empty">No scheduled legs yet — add a service in the Order tab.</div>`;
-    return;
-  }
-
-  const sorted = [...allLegs].sort((a, b) => a.minutesAt - b.minutesAt);
-  const headRow = `
-    <div class="schedule-row head-row">
-      <span>ETA</span><span>Service</span><span>Leg</span><span>Amount</span>
-    </div>
-  `;
-  const rows = sorted
-    .map(
-      (leg) => `
-      <div class="schedule-row">
-        <span class="sched-time">${formatMinutes(leg.minutesAt)}</span>
-        <span>${leg.serviceLabel}</span>
-        <span class="sched-status">Leg ${leg.index}</span>
-        <span class="mono">${leg.amount.toLocaleString()}</span>
-      </div>
-    `
-    )
-    .join("");
-
-  scheduleTable.innerHTML = headRow + rows;
 }
 
 // ==========================================
@@ -767,7 +857,6 @@ function refreshEverything() {
   });
 
   updateSummary();
-  updateSchedule(allLegs);
   updateGraph(allLegs);
 }
 
@@ -989,10 +1078,60 @@ unlockSchedulesBtn.addEventListener("click", () => {
     schedulesLocked.style.display = "none";
     schedulesContent.style.display = "block";
     lockErrorEl.textContent = "";
+    loadActivityLog();
   } else {
     lockErrorEl.textContent = "Incorrect password.";
   }
 });
+
+refreshActivityBtn.addEventListener("click", loadActivityLog);
+
+async function loadActivityLog() {
+  activityLogTableEl.innerHTML = `<div class="summary-empty">Loading...</div>`;
+  try {
+    const res = await fetch(`${PROXY_ORIGIN}/activity-log`);
+    const entries = await res.json();
+    renderActivityLog(entries);
+  } catch (err) {
+    activityLogTableEl.innerHTML = `<div class="summary-empty">Couldn't reach the server: ${err.message}</div>`;
+  }
+}
+
+function renderActivityLog(entries) {
+  if (!entries || entries.length === 0) {
+    activityLogTableEl.innerHTML = `<div class="summary-empty">No activity recorded yet.</div>`;
+    return;
+  }
+
+  const headRow = `
+    <div class="schedule-row head-row">
+      <span>Time</span><span>Website</span><span>API Key</span><span>Order</span>
+    </div>
+  `;
+
+  const rows = entries
+    .map((e) => {
+      const time = new Date(e.timestamp).toLocaleString([], {
+        month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+      });
+      const detail =
+        e.type === "connect"
+          ? "Connected"
+          : `${e.quantity ? e.quantity.toLocaleString() : "?"} ${e.serviceLabel || ""} → ${e.link || "?"}`;
+
+      return `
+        <div class="schedule-row">
+          <span class="sched-time">${time}</span>
+          <span>${e.baseUrl || "—"}</span>
+          <span class="mono">${e.keyMasked || "—"}</span>
+          <span class="sched-status">${detail}</span>
+        </div>
+      `;
+    })
+    .join("");
+
+  activityLogTableEl.innerHTML = headRow + rows;
+}
 
 schedulesPasswordInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") unlockSchedulesBtn.click();
@@ -1013,5 +1152,13 @@ addServiceBtn.addEventListener("click", () => {
 
 pruneOldHistory();
 addLog("Session started");
+
+const savedCreds = loadCredentials();
+if (savedCreds && savedCreds.baseUrl) {
+  apiBaseUrlInput.value = savedCreds.baseUrl;
+  apiKeyInputEl.value = savedCreds.apiKey || "";
+  attemptConnect(savedCreds.baseUrl, savedCreds.apiKey, true);
+}
+
 createServiceSlot();
 refreshEverything();
