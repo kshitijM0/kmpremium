@@ -696,6 +696,54 @@ input[type="range"].randomness::-moz-range-thumb{
 
 .sync-block{ margin-top: 4px; }
 
+.help-contact-box{
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--line);
+}
+
+.help-contact-row{
+  font-size: 0.84rem;
+  color: var(--text);
+  margin-top: 8px;
+}
+
+.help-contact-row a{
+  color: var(--red);
+  text-decoration: none;
+}
+
+.help-contact-row a:hover{ text-decoration: underline; }
+
+.sync-toggle-row{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.sync-toggle-row input{
+  width: 15px;
+  height: 15px;
+  accent-color: var(--red);
+  cursor: pointer;
+}
+
+.sync-badge{
+  font-size: 0.68rem;
+  color: var(--red);
+  background: var(--red-soft);
+  border: 1px solid var(--red-deep);
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-right: auto;
+  margin-left: 8px;
+}
+
 .tracker-note{
   font-size: 0.76rem;
   color: var(--muted);
