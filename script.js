@@ -469,7 +469,6 @@ function createServiceSlot() {
   const randomnessReadout = card.querySelector(".randomness-readout");
   const graphSelect = card.querySelector(".graph-select");
   const editGraphBtn = card.querySelector(".edit-graph-btn");
-  const syncSelect = card.querySelector(".sync-select");
 
   populateCategorySelect(categorySelect);
   populateGraphSelect(graphSelect, "organic1");
@@ -547,32 +546,26 @@ function createServiceSlot() {
 
   editGraphBtn.addEventListener("click", () => openGraphModal(card));
 
-  syncSelect.addEventListener("change", () => refreshEverything());
-
   card.querySelector(".remove-btn").addEventListener("click", () => {
     card.remove();
     addLog(`Removed slot ${card.dataset.id}`);
-    refreshAllSyncSelects();
     refreshEverything();
   });
 
   updateCardPreview(card);
-  refreshAllSyncSelects();
-  addLog(`Added slot ${slotCounter}`);
-}
 
-function refreshAllSyncSelects() {
-  const cards = [...servicesContainer.querySelectorAll(".service-card")];
-  cards.forEach((card) => {
-    const select = card.querySelector(".sync-select");
-    const previous = select.value;
-    const options = cards
-      .filter((c) => c !== card)
-      .map((c) => `<option value="${c.dataset.id}">${c.querySelector(".slot-label").textContent}</option>`)
-      .join("");
-    select.innerHTML = `<option value="">No sync — use its own curve</option>${options}`;
-    if ([...select.options].some((o) => o.value === previous)) select.value = previous;
-  });
+  const syncToggle = document.getElementById("syncNewSlotToggle");
+  const previousCard = card.previousElementSibling;
+  if (syncToggle && syncToggle.checked && previousCard) {
+    card.dataset.syncTarget = previousCard.dataset.id;
+    const badge = card.querySelector(".sync-badge");
+    badge.textContent = `🔗 Synced with ${previousCard.querySelector(".slot-label").textContent}`;
+    badge.style.display = "inline-block";
+  } else {
+    card.dataset.syncTarget = "";
+  }
+
+  addLog(`Added slot ${slotCounter}`);
 }
 
 // ==========================================
@@ -634,12 +627,26 @@ function generateSyncedLegs(quantity, minQty, referenceLegs) {
   return legs;
 }
 
+function binWeights(points, targetCount) {
+  if (targetCount >= points.length) return points;
+  const result = [];
+  const groupSize = points.length / targetCount;
+  for (let i = 0; i < targetCount; i++) {
+    const start = Math.floor(i * groupSize);
+    const end = Math.max(Math.floor((i + 1) * groupSize), start + 1);
+    const slice = points.slice(start, end);
+    result.push(slice.reduce((a, b) => a + b, 0));
+  }
+  return result;
+}
+
 function generateLegs(quantity, durationHours, randomness, curvePoints, minQty) {
   let legs = [];
 
   if (randomness >= 40) {
     const totalMinutes = (12 + Math.random() * 12) * 60;
-    const legCount = 14 + Math.floor(Math.random() * 14);
+    const maxLegsAllowed = minQty > 0 ? Math.max(1, Math.floor(quantity / minQty)) : 28;
+    const legCount = Math.min(maxLegsAllowed, 14 + Math.floor(Math.random() * 14));
 
     const rawWeights = Array.from({ length: legCount }, () => Math.random() + 0.15);
     const weightSum = rawWeights.reduce((a, b) => a + b, 0);
@@ -659,16 +666,26 @@ function generateLegs(quantity, durationHours, randomness, curvePoints, minQty) 
       legs.push({ index: i + 1, amount: Math.max(0, amount), minutesAt: times[i] });
     });
   } else {
-    const weightSum = curvePoints.reduce((a, b) => a + b, 0) || 1;
+    // Size the leg count from quantity/minimum FIRST, then resample the
+    // curve into that many bins — this keeps each curve's shape distinct
+    // instead of merging small legs after the fact (which made different
+    // curves converge to similar-looking results near the minimum).
+    const maxLegsAllowed = minQty > 0 ? Math.max(1, Math.floor(quantity / minQty)) : curvePoints.length;
+    const effectiveCount = Math.min(curvePoints.length, maxLegsAllowed);
+    const usedPoints = binWeights(curvePoints, effectiveCount);
+
+    const weightSum = usedPoints.reduce((a, b) => a + b, 0) || 1;
     let remaining = quantity;
     const totalMinutes = durationHours * 60;
 
-    curvePoints.forEach((weight, i) => {
-      const isLast = i === curvePoints.length - 1;
+    usedPoints.forEach((weight, i) => {
+      const isLast = i === usedPoints.length - 1;
       let amount = isLast ? remaining : Math.round((weight / weightSum) * quantity);
-      if (!isLast && randomness > 0) amount = Math.max(0, Math.round(jitter(amount, randomness)));
+      if (!isLast && randomness > 0) {
+        amount = Math.max(minQty || 1, Math.round(jitter(amount, randomness)));
+      }
       remaining -= isLast ? 0 : amount;
-      const minutesAt = Math.round((i / (curvePoints.length - 1)) * totalMinutes);
+      const minutesAt = usedPoints.length > 1 ? Math.round((i / (usedPoints.length - 1)) * totalMinutes) : 0;
       legs.push({ index: i + 1, amount, minutesAt });
     });
 
@@ -712,8 +729,7 @@ function updateCardPreview(card) {
   }
 
   const curvePoints = getCurveForCard(card);
-  const syncSelect = card.querySelector(".sync-select");
-  const syncTargetId = syncSelect ? syncSelect.value : "";
+  const syncTargetId = card.dataset.syncTarget || "";
   let legs;
 
   if (syncTargetId) {
