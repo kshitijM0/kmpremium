@@ -26,20 +26,20 @@ function colorForCategory(cat) {
 // ==========================================
 const DEMO_CATALOG = {
   views: [
-    { id: 3546, name: "Instagram Views [Real, Fast]", rate: 0.006, min: 100, max: 100000 },
-    { id: 3612, name: "Instagram Views [HQ, Refill]", rate: 0.009, min: 100, max: 500000 },
-    { id: 3720, name: "Instagram Reel Views [Instant]", rate: 0.007, min: 500, max: 200000 },
+    { id: 3546, name: "Instagram Views [Real, Fast]", rate: 6, min: 100, max: 100000 },
+    { id: 3612, name: "Instagram Views [HQ, Refill]", rate: 9, min: 100, max: 500000 },
+    { id: 3720, name: "Instagram Reel Views [Instant]", rate: 7, min: 500, max: 200000 },
   ],
   likes: [
-    { id: 4108, name: "Instagram Likes [Real Users]", rate: 0.012, min: 10, max: 50000 },
-    { id: 4190, name: "Instagram Likes [Instant]", rate: 0.010, min: 20, max: 20000 },
+    { id: 4108, name: "Instagram Likes [Real Users]", rate: 12, min: 10, max: 50000 },
+    { id: 4190, name: "Instagram Likes [Instant]", rate: 10, min: 20, max: 20000 },
   ],
   followers: [
-    { id: 5021, name: "Instagram Followers [HQ, No Drop]", rate: 0.020, min: 50, max: 100000 },
-    { id: 5099, name: "Instagram Followers [Real, Refill 30d]", rate: 0.026, min: 100, max: 50000 },
+    { id: 5021, name: "Instagram Followers [HQ, No Drop]", rate: 20, min: 50, max: 100000 },
+    { id: 5099, name: "Instagram Followers [Real, Refill 30d]", rate: 26, min: 100, max: 50000 },
   ],
   repost: [
-    { id: 6011, name: "Instagram Repost [Real Accounts]", rate: 0.015, min: 5, max: 10000 },
+    { id: 6011, name: "Instagram Repost [Real Accounts]", rate: 15, min: 5, max: 10000 },
   ],
 };
 
@@ -370,7 +370,7 @@ function groupServicesByCategory(list) {
     groups[bucket].push({
       id: svc.service,
       name: svc.name,
-      rate: parseFloat(svc.rate) / 1000 || 0.01,
+      rate: parseFloat(svc.rate) || 0.01,
       min: parseInt(svc.min, 10) || 1,
       max: parseInt(svc.max, 10) || 1000000,
     });
@@ -389,7 +389,7 @@ function renderFetchedServices(list) {
       (svc) => `
       <div class="fetched-service-row">
         <span>#${svc.service} — ${svc.name}</span>
-        <span class="mono">${svc.rate}</span>
+        <span class="mono">$${svc.rate}/1000</span>
       </div>
     `
     )
@@ -413,6 +413,15 @@ function populateCategorySelect(select) {
 
 function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function formatRate(rate) {
+  const n = parseFloat(rate) || 0;
+  return n < 0.01 ? n.toFixed(4) : n.toFixed(3);
+}
+
+function formatCost(cost) {
+  return cost > 0 && cost < 0.01 ? `$${cost.toFixed(4)}` : `$${cost.toFixed(2)}`;
 }
 
 // ==========================================
@@ -487,7 +496,7 @@ function createServiceSlot() {
             (svc) => `
             <div class="service-option" data-id="${svc.id}" data-rate="${svc.rate}" data-name="${svc.name}" data-min="${svc.min}" data-max="${svc.max}">
               <span class="opt-id">#${svc.id}</span>${svc.name}
-              <span class="opt-rate">$${svc.rate.toFixed(3)}/unit</span>
+              <span class="opt-rate">$${formatRate(svc.rate)}/1000</span>
               <br><span class="opt-limits">Min ${svc.min.toLocaleString()} · Max ${svc.max.toLocaleString()}</span>
             </div>
           `
@@ -503,7 +512,7 @@ function createServiceSlot() {
     card.dataset.selectedMin = min;
     card.dataset.selectedMax = max;
     searchInput.value = `#${id} — ${name}`;
-    noteEl.innerHTML = `Selected: ${name} · $${parseFloat(rate).toFixed(3)}/unit<br><b>Min ${parseInt(min).toLocaleString()} · Max ${parseInt(max).toLocaleString()}</b>`;
+    noteEl.innerHTML = `Selected: ${name} · $${formatRate(rate)}/1000<br><b>Min ${parseInt(min).toLocaleString()} · Max ${parseInt(max).toLocaleString()}</b>`;
     noteEl.classList.add("filled");
     dropdown.classList.remove("open");
     refreshEverything();
@@ -553,18 +562,6 @@ function createServiceSlot() {
   });
 
   updateCardPreview(card);
-
-  const syncToggle = document.getElementById("syncNewSlotToggle");
-  const previousCard = card.previousElementSibling;
-  if (syncToggle && syncToggle.checked && previousCard) {
-    card.dataset.syncTarget = previousCard.dataset.id;
-    const badge = card.querySelector(".sync-badge");
-    badge.textContent = `🔗 Synced with ${previousCard.querySelector(".slot-label").textContent}`;
-    badge.style.display = "inline-block";
-  } else {
-    card.dataset.syncTarget = "";
-  }
-
   addLog(`Added slot ${slotCounter}`);
 }
 
@@ -611,20 +608,6 @@ function enforceMinimum(legs, minQty) {
 
   arr.forEach((l, idx) => (l.index = idx + 1));
   return arr;
-}
-
-function generateSyncedLegs(quantity, minQty, referenceLegs) {
-  const weightSum = referenceLegs.reduce((a, l) => a + l.amount, 0) || 1;
-  let remaining = quantity;
-  let legs = referenceLegs.map((refLeg, i) => {
-    const isLast = i === referenceLegs.length - 1;
-    const amount = isLast ? remaining : Math.round((refLeg.amount / weightSum) * quantity);
-    remaining -= isLast ? 0 : amount;
-    return { index: i + 1, amount, minutesAt: refLeg.minutesAt };
-  });
-  legs = legs.filter((l) => l.amount > 0);
-  legs = enforceMinimum(legs, minQty);
-  return legs;
 }
 
 function binWeights(points, targetCount) {
@@ -677,6 +660,7 @@ function generateLegs(quantity, durationHours, randomness, curvePoints, minQty) 
     const weightSum = usedPoints.reduce((a, b) => a + b, 0) || 1;
     let remaining = quantity;
     const totalMinutes = durationHours * 60;
+    const avgGap = usedPoints.length > 1 ? totalMinutes / (usedPoints.length - 1) : totalMinutes;
 
     usedPoints.forEach((weight, i) => {
       const isLast = i === usedPoints.length - 1;
@@ -685,9 +669,19 @@ function generateLegs(quantity, durationHours, randomness, curvePoints, minQty) 
         amount = Math.max(minQty || 1, Math.round(jitter(amount, randomness)));
       }
       remaining -= isLast ? 0 : amount;
-      const minutesAt = usedPoints.length > 1 ? Math.round((i / (usedPoints.length - 1)) * totalMinutes) : 0;
+
+      let minutesAt = usedPoints.length > 1 ? (i / (usedPoints.length - 1)) * totalMinutes : 0;
+      if (randomness > 0 && i > 0 && !isLast) {
+        const timeJitterRange = avgGap * (randomness / 40);
+        minutesAt += (Math.random() * 2 - 1) * timeJitterRange;
+      }
+      minutesAt = Math.max(0, Math.round(minutesAt));
+
       legs.push({ index: i + 1, amount, minutesAt });
     });
+
+    legs.sort((a, b) => a.minutesAt - b.minutesAt);
+    legs.forEach((l, idx) => (l.index = idx + 1));
 
     const sumSoFar = legs.reduce((a, l) => a + l.amount, 0);
     legs[legs.length - 1].amount += quantity - sumSoFar;
@@ -729,22 +723,8 @@ function updateCardPreview(card) {
   }
 
   const curvePoints = getCurveForCard(card);
-  const syncTargetId = card.dataset.syncTarget || "";
-  let legs;
-
-  if (syncTargetId) {
-    const targetCard = servicesContainer.querySelector(`.service-card[data-id="${syncTargetId}"]`);
-    if (targetCard && targetCard._lastLegs && targetCard._lastLegs.length > 0) {
-      legs = generateSyncedLegs(quantity, minQty, targetCard._lastLegs);
-    } else {
-      legs = generateLegs(quantity, durationHours, randomness, curvePoints, minQty);
-    }
-  } else {
-    legs = generateLegs(quantity, durationHours, randomness, curvePoints, minQty);
-  }
-
+  let legs = generateLegs(quantity, durationHours, randomness, curvePoints, minQty);
   legs = legs.map((l) => ({ ...l, serviceLabel, category }));
-  card._lastLegs = legs;
 
   previewBox.innerHTML = legs
     .map(
@@ -759,8 +739,8 @@ function updateCardPreview(card) {
     )
     .join("");
 
-  const cost = quantity * rate;
-  previewCostEl.textContent = `$${cost.toFixed(2)}`;
+  const cost = (quantity / 1000) * rate;
+  previewCostEl.textContent = formatCost(cost);
 
   return { serviceLabel, category, quantity, cost, legs, serviceId: card.dataset.selectedServiceId };
 }
@@ -785,11 +765,11 @@ function updateSummary() {
     const rate = parseFloat(card.dataset.selectedRate) || 0;
     const quantity = Math.max(0, parseInt(qtyInput.value, 10) || 0);
     totalQty += quantity;
-    totalCost += quantity * rate;
+    totalCost += (quantity / 1000) * rate;
   });
 
   totalQtyEl.textContent = totalQty.toLocaleString();
-  totalCostEl.textContent = `$${totalCost.toFixed(2)}`;
+  totalCostEl.textContent = formatCost(totalCost);
 }
 
 // ==========================================
