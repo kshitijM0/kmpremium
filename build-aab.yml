@@ -1,0 +1,73 @@
+name: Build Signed AAB
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'android-app/**'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Prepare signing keystore
+        working-directory: android-app
+        run: |
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "Using saved keystore from repo secrets."
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+            echo "KEYSTORE_PATH=release.keystore" >> "$GITHUB_ENV"
+            echo "KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=${{ secrets.KEY_ALIAS }}" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No saved keystore found — generating a NEW one for this run."
+            echo "::warning::Download the 'km-panel-keystore-SAVE-THIS' artifact below and keep it forever."
+            keytool -genkeypair -v \
+              -keystore release.keystore \
+              -alias kmpanel \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass kmpanel123 -keypass kmpanel123 \
+              -dname "CN=KM Panel, OU=KM, O=KM, L=City, S=State, C=IN"
+            echo "KEYSTORE_PATH=release.keystore" >> "$GITHUB_ENV"
+            echo "KEYSTORE_PASSWORD=kmpanel123" >> "$GITHUB_ENV"
+            echo "KEY_ALIAS=kmpanel" >> "$GITHUB_ENV"
+            echo "KEY_PASSWORD=kmpanel123" >> "$GITHUB_ENV"
+          fi
+
+      - name: Generate Gradle wrapper
+        working-directory: android-app
+        run: |
+          gradle wrapper --gradle-version 8.7
+          chmod +x gradlew
+
+      - name: Build release AAB
+        working-directory: android-app
+        run: ./gradlew bundleRelease --stacktrace
+
+      - name: Upload AAB (upload this to Play Console)
+        uses: actions/upload-artifact@v4
+        with:
+          name: km-panel-release-aab
+          path: android-app/app/build/outputs/bundle/release/app-release.aab
+
+      - name: Upload keystore (SAVE THIS FILE FOREVER — needed for every future update)
+        uses: actions/upload-artifact@v4
+        with:
+          name: km-panel-keystore-SAVE-THIS
+          path: android-app/release.keystore
+          if-no-files-found: ignore
