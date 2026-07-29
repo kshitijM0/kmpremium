@@ -78,6 +78,11 @@
 
         <div class="card-title"><span class="card-icon">📁</span> Create Order</div>
 
+        <div class="mode-toggle-row">
+          <button class="mode-toggle-btn active" id="autoModeBtn" data-mode="auto">⚙️ Auto</button>
+          <button class="mode-toggle-btn" id="manualModeBtn" data-mode="manual">✋ Manual</button>
+        </div>
+
         <button class="presets-btn" id="presetsBtn">
           <span><span class="card-icon">💾</span> Saved Presets</span>
           <span class="chevron">▾</span>
@@ -144,14 +149,16 @@
         <button id="trackBtn" class="submit-btn">Show history</button>
       </div>
 
-      <div class="graph-card">
+      <div class="graph-card ig-style-card">
         <div class="graph-head">
-          <span class="graph-title">Delivered so far (last 7 days)</span>
+          <span class="graph-title">Views over time</span>
         </div>
-        <svg id="trackerSvg" class="graph-svg" viewBox="0 0 600 140" preserveAspectRatio="none">
+        <div id="trackerPills" class="ig-pills"></div>
+        <svg id="trackerSvg" class="graph-svg ig-graph-svg" viewBox="0 0 700 380" preserveAspectRatio="none">
+          <g id="trackerGridGroup"></g>
           <g id="trackerLinesGroup"></g>
+          <g id="trackerAxisGroup"></g>
         </svg>
-        <div id="trackerLegend" class="graph-legend"></div>
         <div id="trackerEmpty" class="summary-empty">Enter a link and click "Show history".</div>
         <p class="tracker-note">⚠️ Still improving — tracking accuracy may not be fully reliable yet.</p>
       </div>
@@ -161,7 +168,7 @@
     <section class="panel" id="tab-schedules">
       <div class="panel-head">
         <h1>Schedules</h1>
-        <p>Who's connecting through this panel, and what they're ordering — server-side log.</p>
+        <p>Active orders you can pause, resume, or delete — plus who's connecting through this panel.</p>
       </div>
 
       <div id="schedulesLocked" class="lock-card">
@@ -174,6 +181,13 @@
 
       <div id="schedulesContent" style="display:none;">
         <button id="refreshActivityBtn" class="add-slot-btn" style="margin-bottom:14px;">↻ Refresh</button>
+
+        <div class="section-title"><span class="card-icon">📦</span> Orders</div>
+        <div id="ordersList" class="orders-list">
+          <div class="summary-empty">Loading...</div>
+        </div>
+
+        <div class="section-title" style="margin-top:24px;"><span class="card-icon">🔌</span> Connections &amp; orders log</div>
         <div id="activityLogTable" class="schedule-table">
           <div class="summary-empty">Loading...</div>
         </div>
@@ -242,31 +256,46 @@
       <span class="qty-warning"></span>
     </div>
 
-    <div class="field-block">
-      <span class="field-label">Duration (hours)</span>
-      <input class="input full duration" type="number" min="1" max="72" value="24">
+    <div class="auto-fields">
+      <div class="field-block">
+        <span class="field-label">Duration (hours)</span>
+        <input class="input full duration" type="number" min="1" max="72" value="24">
+      </div>
+
+      <div class="field-block randomness-block">
+        <span class="field-label">
+          Delivery randomness — <span class="randomness-readout mono">18%</span>
+        </span>
+        <input class="input full randomness" type="range" min="1" max="40" value="18">
+        <span class="randomness-caption">At 40% delivery becomes fully random (real drip-style, spread over 12–24h)</span>
+      </div>
+
+      <div class="field-block graph-select-block">
+        <span class="field-label">Delivery curve</span>
+        <div class="graph-select-row">
+          <select class="input full graph-select">
+            <option value="steady">Steady Drip</option>
+            <option value="burst">Instant Burst</option>
+            <option value="late">Late Spike</option>
+            <option value="organic1" selected>Organic — Morning Rise</option>
+            <option value="organic2">Organic — Evening Wave</option>
+            <option value="custom">Custom (edit below)</option>
+          </select>
+          <button class="edit-graph-btn">Edit</button>
+        </div>
+      </div>
     </div>
 
-    <div class="field-block randomness-block">
-      <span class="field-label">
-        Delivery randomness — <span class="randomness-readout mono">18%</span>
-      </span>
-      <input class="input full randomness" type="range" min="1" max="40" value="18">
-      <span class="randomness-caption">At 40% delivery becomes fully random (real drip-style, spread over 12–24h)</span>
-    </div>
-
-    <div class="field-block graph-select-block">
-      <span class="field-label">Delivery curve</span>
-      <div class="graph-select-row">
-        <select class="input full graph-select">
-          <option value="steady">Steady Drip</option>
-          <option value="burst">Instant Burst</option>
-          <option value="late">Late Spike</option>
-          <option value="organic1" selected>Organic — Morning Rise</option>
-          <option value="organic2">Organic — Evening Wave</option>
-          <option value="custom">Custom (edit below)</option>
-        </select>
-        <button class="edit-graph-btn">Edit</button>
+    <div class="manual-fields">
+      <div class="slot-row-secondary">
+        <label class="field">
+          <span class="field-label">Legs</span>
+          <input class="input manual-legs" type="number" min="1" max="250" value="5">
+        </label>
+        <label class="field">
+          <span class="field-label">Delay between legs (min)</span>
+          <input class="input manual-delay" type="number" min="1" value="10">
+        </label>
       </div>
     </div>
 
