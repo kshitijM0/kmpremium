@@ -647,7 +647,7 @@ function generateLegs(quantity, durationHours, randomness, curvePoints, minQty) 
   let legs = [];
 
   if (randomness >= 40) {
-    const totalMinutes = (12 + Math.random() * 12) * 60;
+    const totalMinutes = durationHours * 60;
     const maxLegsAllowed = minQty > 0 ? Math.max(1, Math.floor(quantity / minQty)) : 28;
     const legCount = Math.min(maxLegsAllowed, 14 + Math.floor(Math.random() * 14));
 
@@ -686,7 +686,7 @@ function generateLegs(quantity, durationHours, randomness, curvePoints, minQty) 
       const isLast = i === usedPoints.length - 1;
       let amount = isLast ? remaining : Math.round((weight / weightSum) * quantity);
       if (!isLast && randomness > 0) {
-        amount = Math.max(minQty || 1, Math.round(jitter(amount, randomness)));
+        amount = Math.max(0, Math.round(jitter(amount, randomness)));
       }
       remaining -= isLast ? 0 : amount;
 
@@ -715,6 +715,36 @@ function generateLegs(quantity, durationHours, randomness, curvePoints, minQty) 
 // ==========================================
 // CARD PREVIEW
 // ==========================================
+function generateSyncedLegsWithReduction(quantity, minQty, referenceLegs) {
+  const maxLegsAllowed = minQty > 0 ? Math.max(1, Math.floor(quantity / minQty)) : referenceLegs.length;
+  let reference = referenceLegs;
+  let reduced = false;
+  let neededQtyForFull = null;
+
+  if (maxLegsAllowed < referenceLegs.length) {
+    reduced = true;
+    neededQtyForFull = minQty * referenceLegs.length;
+    const step = referenceLegs.length / maxLegsAllowed;
+    reference = [];
+    for (let i = 0; i < maxLegsAllowed; i++) {
+      reference.push(referenceLegs[Math.min(referenceLegs.length - 1, Math.round(i * step))]);
+    }
+  }
+
+  const weightSum = reference.reduce((a, l) => a + l.amount, 0) || 1;
+  let remaining = quantity;
+  let legs = reference.map((refLeg, i) => {
+    const isLast = i === reference.length - 1;
+    const amount = isLast ? remaining : Math.round((refLeg.amount / weightSum) * quantity);
+    remaining -= isLast ? 0 : amount;
+    return { index: i + 1, amount, minutesAt: refLeg.minutesAt };
+  });
+  legs = legs.filter((l) => l.amount > 0);
+  legs = enforceMinimum(legs, minQty);
+
+  return { legs, reduced, fromCount: referenceLegs.length, toCount: legs.length, neededQtyForFull };
+}
+
 function updateCardPreview(card) {
   const categorySelect = card.querySelector(".category-select");
   const qtyInput = card.querySelector(".qty");
@@ -723,6 +753,8 @@ function updateCardPreview(card) {
   const previewBox = card.querySelector(".legs-preview");
   const previewCostEl = card.querySelector(".preview-cost");
   const qtyWarningEl = card.querySelector(".qty-warning");
+  const showLegsToggle = card.querySelector(".show-legs-toggle");
+  const summaryNoteEl = card.querySelector(".legs-summary-note");
 
   const category = categorySelect.value || "views";
   const serviceLabel = capitalize(category);
@@ -742,31 +774,62 @@ function updateCardPreview(card) {
     qtyWarningEl.textContent = "";
   }
 
+  const allCards = [...servicesContainer.querySelectorAll(".service-card")];
+  const isFirstCard = allCards[0] === card;
+  const referenceCard = allCards[0];
+
   let legs;
+  let syncInfo = null;
+
   if (ORDER_MODE === "manual") {
     const legsCountInput = card.querySelector(".manual-legs");
     const delayInput = card.querySelector(".manual-delay");
     const legsCount = Math.max(1, parseInt(legsCountInput.value, 10) || 1);
     const delayMinutes = Math.max(1, parseInt(delayInput.value, 10) || 1);
     legs = generateManualLegs(quantity, legsCount, delayMinutes, minQty);
+  } else if (!isFirstCard && referenceCard && referenceCard._lastLegs && referenceCard._lastLegs.length > 0) {
+    const result = generateSyncedLegsWithReduction(quantity, minQty, referenceCard._lastLegs);
+    legs = result.legs;
+    syncInfo = result;
   } else {
     const curvePoints = getCurveForCard(card);
     legs = generateLegs(quantity, durationHours, randomness, curvePoints, minQty);
   }
-  legs = legs.map((l) => ({ ...l, serviceLabel, category }));
 
-  previewBox.innerHTML = legs
-    .map(
-      (leg) => `
-      <div class="leg-row">
-        <span class="leg-dot" style="background:${colorForCategory(category)}"></span>
-        <span class="leg-label">Leg ${leg.index}</span>
-        <span class="leg-amount">${leg.amount.toLocaleString()} ${serviceLabel}</span>
-        <span class="leg-time mono">${formatMinutes(leg.minutesAt)}</span>
-      </div>
-    `
-    )
-    .join("");
+  legs = legs.map((l) => ({ ...l, serviceLabel, category }));
+  card._lastLegs = legs;
+
+  if (showLegsToggle && showLegsToggle.checked) {
+    previewBox.style.display = "flex";
+    previewBox.innerHTML = legs
+      .map(
+        (leg) => `
+        <div class="leg-row">
+          <span class="leg-dot" style="background:${colorForCategory(category)}"></span>
+          <span class="leg-label">Leg ${leg.index}</span>
+          <span class="leg-amount">${leg.amount.toLocaleString()} ${serviceLabel}</span>
+          <span class="leg-time mono">${formatMinutes(leg.minutesAt)}</span>
+        </div>
+      `
+      )
+      .join("");
+  } else {
+    previewBox.style.display = "none";
+    previewBox.innerHTML = "";
+  }
+
+  if (summaryNoteEl) {
+    if (syncInfo && syncInfo.reduced) {
+      summaryNoteEl.textContent = `⚠️ Synced to Slot 1's timing, but legs reduced from ${syncInfo.fromCount} to ${syncInfo.toCount} — need at least ${syncInfo.neededQtyForFull.toLocaleString()} quantity to match all ${syncInfo.fromCount} legs.`;
+      summaryNoteEl.classList.add("warning");
+    } else if (!isFirstCard && ORDER_MODE !== "manual" && legs.length > 0) {
+      summaryNoteEl.textContent = `🔗 Synced with Slot 1's timing — ${legs.length} legs.`;
+      summaryNoteEl.classList.remove("warning");
+    } else {
+      summaryNoteEl.textContent = `${legs.length} leg${legs.length === 1 ? "" : "s"} planned.`;
+      summaryNoteEl.classList.remove("warning");
+    }
+  }
 
   const cost = (quantity / 1000) * rate;
   previewCostEl.textContent = formatCost(cost);
