@@ -473,6 +473,110 @@ body{
 .schedule-row .sched-time{ color: var(--red); font-family: var(--font-mono); }
 .schedule-row .sched-status{ color: var(--muted); font-size: 0.76rem; }
 .schedule-table .summary-empty{ padding: 20px 16px; background: var(--panel); }
+
+/* ---------- ORDER CARDS (Schedules tab) ---------- */
+.orders-list{ display:flex; flex-direction: column; gap: 12px; }
+
+.order-card{
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 16px 18px;
+  display:flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.order-card-main{ flex: 1; min-width: 0; }
+
+.order-card-head{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.order-name{
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-status-badge{
+  font-size: 0.68rem;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.order-status-badge.active{ background: rgba(51,209,122,0.15); color: var(--green); border: 1px solid rgba(51,209,122,0.35); }
+.order-status-badge.paused{ background: rgba(255,180,45,0.15); color: #ffb42d; border: 1px solid rgba(255,180,45,0.35); }
+.order-status-badge.completed{ background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
+
+.order-stats-line{
+  font-size: 0.86rem;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.order-progress-line{
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.order-link{
+  font-size: 0.78rem;
+  color: var(--muted);
+  display:block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 10px;
+}
+
+.order-progress-bar{
+  height: 6px;
+  border-radius: 4px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.order-progress-fill{
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--red), var(--green));
+}
+
+.order-actions{
+  display:flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.order-action-btn{
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.95rem;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  transition: filter 0.15s ease;
+}
+
+.order-action-btn:hover{ filter: brightness(1.15); }
+
+.order-action-btn.play{ background: rgba(51,209,122,0.18); color: var(--green); }
+.order-action-btn.pause{ background: rgba(255,180,45,0.18); color: #ffb42d; }
+.order-action-btn.delete{ background: var(--red-soft); color: var(--red); }
 .summary-empty{ color: var(--muted); font-size: 0.82rem; }
 
 /* ---------- API ---------- */
@@ -715,6 +819,40 @@ input[type="range"].randomness::-moz-range-thumb{
 
 .help-contact-row a:hover{ text-decoration: underline; }
 
+/* ---------- AUTO/MANUAL MODE TOGGLE ---------- */
+.mode-toggle-row{
+  display:flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 4px;
+}
+
+.mode-toggle-btn{
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 0.86rem;
+  padding: 10px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mode-toggle-btn.active{
+  background: linear-gradient(135deg, var(--red), var(--red-deep));
+  color: #fff;
+}
+
+.manual-fields{ display:none; }
+.services-container.mode-manual .auto-fields{ display:none; }
+.services-container.mode-manual .manual-fields{ display:block; }
+
 .sync-toggle-row{
   display:flex;
   align-items:center;
@@ -750,6 +888,40 @@ input[type="range"].randomness::-moz-range-thumb{
   font-style: italic;
   margin: 10px 0 0;
 }
+
+/* ---------- INSTAGRAM-STYLE TRACKER GRAPH ---------- */
+.ig-style-card{ background: #0a0a0d; border-color: #1a1a1e; }
+
+.ig-pills{
+  display:flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.ig-pill{
+  background: transparent;
+  border: 1px solid #333338;
+  color: #b0b0b6;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ig-pill.active{
+  background: #23232a;
+  border-color: #3a3a42;
+  color: #fff;
+}
+
+.ig-graph-svg{ height: 260px; }
+.ig-grid-line{ stroke: #26262c; stroke-width: 1; }
+.ig-axis-text{ fill: #86868c; font-size: 13px; font-family: var(--font-body); }
+.ig-line-path{ stroke: #e930c0; stroke-width: 3; fill: none; }
 
 /* ---------- GRAPH LEGEND ---------- */
 .graph-legend{
