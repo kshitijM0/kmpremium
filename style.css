@@ -853,6 +853,33 @@ input[type="range"].randomness::-moz-range-thumb{
 .services-container.mode-manual .auto-fields{ display:none; }
 .services-container.mode-manual .manual-fields{ display:block; }
 
+.legs-toggle-row{
+  display:flex;
+  align-items:center;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 6px;
+}
+
+.legs-toggle-row input{
+  width: 15px;
+  height: 15px;
+  accent-color: var(--red);
+  cursor: pointer;
+}
+
+.legs-summary-note{
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: 8px;
+  min-height: 1.1em;
+}
+
+.legs-summary-note.warning{ color: #ffb42d; }
+
 .sync-toggle-row{
   display:flex;
   align-items:center;
