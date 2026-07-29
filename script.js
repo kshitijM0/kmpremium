@@ -44,6 +44,7 @@ const DEMO_CATALOG = {
 };
 
 let CATALOG = DEMO_CATALOG;
+let ORDER_MODE = "auto";
 let PANEL = { baseUrl: "", apiKey: "", connected: false };
 
 const CREDENTIALS_KEY = "km_panel_credentials";
@@ -168,6 +169,7 @@ const totalCostEl = document.getElementById("totalCost");
 const balanceValueEl = document.getElementById("balanceValue");
 
 const activityLogTableEl = document.getElementById("activityLogTable");
+const ordersListEl = document.getElementById("ordersList");
 const refreshActivityBtn = document.getElementById("refreshActivityBtn");
 const logsList = document.getElementById("logsList");
 
@@ -610,17 +612,35 @@ function enforceMinimum(legs, minQty) {
   return arr;
 }
 
-function binWeights(points, targetCount) {
-  if (targetCount >= points.length) return points;
+function resampleCurve(points, targetCount) {
+  if (targetCount === points.length) return points;
   const result = [];
-  const groupSize = points.length / targetCount;
+  const lastIndex = points.length - 1;
   for (let i = 0; i < targetCount; i++) {
-    const start = Math.floor(i * groupSize);
-    const end = Math.max(Math.floor((i + 1) * groupSize), start + 1);
-    const slice = points.slice(start, end);
-    result.push(slice.reduce((a, b) => a + b, 0));
+    const pos = (i / Math.max(1, targetCount - 1)) * lastIndex;
+    const lower = Math.floor(pos);
+    const upper = Math.min(lastIndex, lower + 1);
+    const frac = pos - lower;
+    result.push(points[lower] * (1 - frac) + points[upper] * frac);
   }
   return result;
+}
+
+function generateManualLegs(quantity, legsCount, delayMinutes, minQty) {
+  const base = Math.floor(quantity / legsCount);
+  let remaining = quantity;
+  let legs = [];
+
+  for (let i = 0; i < legsCount; i++) {
+    const isLast = i === legsCount - 1;
+    const amount = isLast ? remaining : base;
+    remaining -= amount;
+    legs.push({ index: i + 1, amount, minutesAt: i * delayMinutes });
+  }
+
+  legs = legs.filter((l) => l.amount > 0);
+  legs = enforceMinimum(legs, minQty);
+  return legs;
 }
 
 function generateLegs(quantity, durationHours, randomness, curvePoints, minQty) {
@@ -653,9 +673,9 @@ function generateLegs(quantity, durationHours, randomness, curvePoints, minQty) 
     // curve into that many bins — this keeps each curve's shape distinct
     // instead of merging small legs after the fact (which made different
     // curves converge to similar-looking results near the minimum).
-    const maxLegsAllowed = minQty > 0 ? Math.max(1, Math.floor(quantity / minQty)) : curvePoints.length;
-    const effectiveCount = Math.min(curvePoints.length, maxLegsAllowed);
-    const usedPoints = binWeights(curvePoints, effectiveCount);
+    const maxLegsAllowed = minQty > 0 ? Math.max(1, Math.floor(quantity / minQty)) : 250;
+    const effectiveCount = Math.min(250, maxLegsAllowed);
+    const usedPoints = resampleCurve(curvePoints, effectiveCount);
 
     const weightSum = usedPoints.reduce((a, b) => a + b, 0) || 1;
     let remaining = quantity;
@@ -722,8 +742,17 @@ function updateCardPreview(card) {
     qtyWarningEl.textContent = "";
   }
 
-  const curvePoints = getCurveForCard(card);
-  let legs = generateLegs(quantity, durationHours, randomness, curvePoints, minQty);
+  let legs;
+  if (ORDER_MODE === "manual") {
+    const legsCountInput = card.querySelector(".manual-legs");
+    const delayInput = card.querySelector(".manual-delay");
+    const legsCount = Math.max(1, parseInt(legsCountInput.value, 10) || 1);
+    const delayMinutes = Math.max(1, parseInt(delayInput.value, 10) || 1);
+    legs = generateManualLegs(quantity, legsCount, delayMinutes, minQty);
+  } else {
+    const curvePoints = getCurveForCard(card);
+    legs = generateLegs(quantity, durationHours, randomness, curvePoints, minQty);
+  }
   legs = legs.map((l) => ({ ...l, serviceLabel, category }));
 
   previewBox.innerHTML = legs
@@ -986,7 +1015,7 @@ submitOrderBtn.addEventListener("click", async () => {
       const res = await fetch(`${PROXY_ORIGIN}/schedule-order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseUrl: PANEL.baseUrl, apiKey: PANEL.apiKey, legs: allLegsForOrder }),
+        body: JSON.stringify({ name, link, baseUrl: PANEL.baseUrl, apiKey: PANEL.apiKey, legs: allLegsForOrder }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -994,6 +1023,7 @@ submitOrderBtn.addEventListener("click", async () => {
       orderStatusEl.textContent = `Schedule "${name}" is now running on the server (${data.scheduled} legs) — safe to close this tab, delivery continues.`;
       orderStatusEl.className = "connect-status ok";
       addLog(`Order "${name}" handed off to server scheduler (${data.scheduled} legs)`);
+      loadOrders();
     } catch (err) {
       orderStatusEl.textContent = `Couldn't hand the schedule to the server: ${err.message}`;
       orderStatusEl.className = "connect-status error";
@@ -1021,11 +1051,10 @@ function simulateDeliverLeg(serviceLabel, category, amount, link) {
 // ==========================================
 // TRACKER TAB — real saved history only
 // ==========================================
+let TRACKER_ENTRIES = [];
+
 trackBtn.addEventListener("click", async () => {
   const link = trackerLinkInput.value.trim();
-  const linesGroup = document.getElementById("trackerLinesGroup");
-  const legend = document.getElementById("trackerLegend");
-
   if (!link) return;
 
   trackerEmptyEl.style.display = "block";
@@ -1041,30 +1070,117 @@ trackBtn.addEventListener("click", async () => {
     // server unreachable — fall back to local-only history silently
   }
 
-  const entries = [...localEntries, ...serverEntries].sort((a, b) => a.timestamp - b.timestamp);
+  TRACKER_ENTRIES = [...localEntries, ...serverEntries].sort((a, b) => a.timestamp - b.timestamp);
 
-  if (entries.length === 0) {
-    linesGroup.innerHTML = "";
-    legend.innerHTML = "";
+  if (TRACKER_ENTRIES.length === 0) {
+    document.getElementById("trackerPills").innerHTML = "";
+    document.getElementById("trackerLinesGroup").innerHTML = "";
+    document.getElementById("trackerGridGroup").innerHTML = "";
+    document.getElementById("trackerAxisGroup").innerHTML = "";
     trackerEmptyEl.style.display = "block";
     trackerEmptyEl.textContent = "No delivery history found for this link in the last 7 days — place an order first.";
     return;
   }
 
   trackerEmptyEl.style.display = "none";
-
-  const legsByCategory = {};
-  entries.forEach((entry) => {
-    if (!legsByCategory[entry.category]) legsByCategory[entry.category] = [];
-    legsByCategory[entry.category].push({
-      minutesAt: Math.round((entry.timestamp - entries[0].timestamp) / 60000),
-      amount: entry.amount,
-    });
-  });
-
-  drawMultiLineGraph(linesGroup, legend, legsByCategory, 600, 140, 8);
+  renderTrackerPills();
+  renderTrackerSelection("all");
   addLog(`Viewed delivery history for ${link}`);
 });
+
+function renderTrackerPills() {
+  const categories = [...new Set(TRACKER_ENTRIES.map((e) => e.category))];
+  const pillsEl = document.getElementById("trackerPills");
+
+  const options = ["all", ...categories];
+  pillsEl.innerHTML = options
+    .map(
+      (opt, i) => `
+      <button class="ig-pill ${i === 0 ? "active" : ""}" data-cat="${opt}">
+        ${opt === "all" ? "All" : capitalize(opt)}
+      </button>
+    `
+    )
+    .join("");
+
+  pillsEl.querySelectorAll(".ig-pill").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      pillsEl.querySelectorAll(".ig-pill").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      renderTrackerSelection(btn.dataset.cat);
+    });
+  });
+}
+
+function niceStep(maxValue) {
+  const roughStep = maxValue / 2;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep || 1)));
+  const normalized = roughStep / magnitude;
+  let niceNormalized;
+  if (normalized < 1.5) niceNormalized = 1;
+  else if (normalized < 3.5) niceNormalized = 2.5;
+  else if (normalized < 7.5) niceNormalized = 5;
+  else niceNormalized = 10;
+  return niceNormalized * magnitude;
+}
+
+function formatK(value) {
+  if (value >= 1000) return `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}K`;
+  return `${Math.round(value)}`;
+}
+
+function renderTrackerSelection(catFilter) {
+  const filtered = catFilter === "all" ? TRACKER_ENTRIES : TRACKER_ENTRIES.filter((e) => e.category === catFilter);
+  if (filtered.length === 0) return;
+
+  const startTime = TRACKER_ENTRIES[0].timestamp;
+  let cumulative = 0;
+  const points = filtered.map((e) => {
+    cumulative += e.amount;
+    return { t: (e.timestamp - startTime) / 60000, v: cumulative };
+  });
+
+  const width = 700, height = 380;
+  const padLeft = 55, padRight = 20, padTop = 20, padBottom = 40;
+  const plotW = width - padLeft - padRight;
+  const plotH = height - padTop - padBottom;
+
+  const maxT = Math.max(...points.map((p) => p.t), 1);
+  const maxV = Math.max(...points.map((p) => p.v), 1);
+  const step = niceStep(maxV);
+  const gridMax = step * 2;
+
+  const toXY = (p) => [
+    padLeft + (p.t / maxT) * plotW,
+    padTop + plotH - (p.v / gridMax) * plotH,
+  ];
+
+  const coords = points.map(toXY);
+  let d = `M ${coords[0][0]} ${coords[0][1]}`;
+  coords.slice(1).forEach(([x, y]) => (d += ` L ${x} ${y}`));
+
+  document.getElementById("trackerLinesGroup").innerHTML = `<path class="ig-line-path" d="${d}"></path>`;
+
+  // gridlines + K labels (0, step, step*2)
+  let gridHtml = "";
+  [0, step, gridMax].forEach((val) => {
+    const y = padTop + plotH - (val / gridMax) * plotH;
+    gridHtml += `<line class="ig-grid-line" x1="${padLeft}" y1="${y}" x2="${width - padRight}" y2="${y}"></line>`;
+    gridHtml += `<text class="ig-axis-text" x="${padLeft - 12}" y="${y + 4}" text-anchor="end">${formatK(val)}</text>`;
+  });
+  document.getElementById("trackerGridGroup").innerHTML = gridHtml;
+
+  // x-axis hour labels (0, half, full)
+  const totalHours = maxT / 60;
+  let axisHtml = "";
+  [0, totalHours / 2, totalHours].forEach((h, i) => {
+    const x = padLeft + (i / 2) * plotW;
+    const label = h < 0.1 ? "0" : `${Math.round(h)}h`;
+    const anchor = i === 0 ? "start" : i === 2 ? "end" : "middle";
+    axisHtml += `<text class="ig-axis-text" x="${x}" y="${height - 14}" text-anchor="${anchor}">${label}</text>`;
+  });
+  document.getElementById("trackerAxisGroup").innerHTML = axisHtml;
+}
 
 // ==========================================
 // SCHEDULES PASSWORD GATE
@@ -1074,13 +1190,101 @@ unlockSchedulesBtn.addEventListener("click", () => {
     schedulesLocked.style.display = "none";
     schedulesContent.style.display = "block";
     lockErrorEl.textContent = "";
+    loadOrders();
     loadActivityLog();
   } else {
     lockErrorEl.textContent = "Incorrect password.";
   }
 });
 
-refreshActivityBtn.addEventListener("click", loadActivityLog);
+refreshActivityBtn.addEventListener("click", () => {
+  loadOrders();
+  loadActivityLog();
+});
+
+// ==========================================
+// ORDERS (Schedules tab — play / pause / delete)
+// ==========================================
+async function loadOrders() {
+  ordersListEl.innerHTML = `<div class="summary-empty">Loading...</div>`;
+  try {
+    const res = await fetch(`${PROXY_ORIGIN}/orders`);
+    const orders = await res.json();
+    renderOrders(orders);
+  } catch (err) {
+    ordersListEl.innerHTML = `<div class="summary-empty">Couldn't reach the server: ${err.message}</div>`;
+  }
+}
+
+function renderOrders(orders) {
+  if (!orders || orders.length === 0) {
+    ordersListEl.innerHTML = `<div class="summary-empty">No orders yet — create one in the Order tab.</div>`;
+    return;
+  }
+
+  ordersListEl.innerHTML = orders
+    .map((order) => {
+      const pct = order.totalLegs > 0 ? Math.round((order.doneLegs / order.totalLegs) * 100) : 0;
+
+      const statsParts = Object.entries(order.byCategory).map(
+        ([cat, qty]) => `${categoryEmoji(cat)} ${capitalize(cat)} (${qty.toLocaleString()})`
+      );
+
+      const nextText = order.nextFireAt
+        ? new Date(order.nextFireAt).toLocaleString([], { month: "numeric", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })
+        : "—";
+
+      const isCompleted = order.status === "completed";
+      const isPaused = order.status === "paused";
+
+      const playPauseBtn = isCompleted
+        ? ""
+        : isPaused
+        ? `<button class="order-action-btn play" data-action="resume" data-id="${order.id}" title="Resume">▶</button>`
+        : `<button class="order-action-btn pause" data-action="pause" data-id="${order.id}" title="Pause">⏸</button>`;
+
+      return `
+        <div class="order-card">
+          <div class="order-card-main">
+            <div class="order-card-head">
+              <span class="order-name">${order.name}</span>
+              <span class="order-status-badge ${order.status}">${capitalize(order.status)}</span>
+            </div>
+            <div class="order-stats-line">${statsParts.join(" · ")}</div>
+            <div class="order-progress-line">Done: ${order.doneLegs}/${order.totalLegs} legs · Next: ${nextText}</div>
+            <a class="order-link" href="${order.link}" target="_blank" rel="noopener">${order.link}</a>
+            <div class="order-progress-bar"><div class="order-progress-fill" style="width:${pct}%"></div></div>
+          </div>
+          <div class="order-actions">
+            ${playPauseBtn}
+            <button class="order-action-btn delete" data-action="delete" data-id="${order.id}" title="Delete">🗑</button>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
+  ordersListEl.querySelectorAll(".order-action-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+
+      if (action === "delete") {
+        await fetch(`${PROXY_ORIGIN}/orders/${id}`, { method: "DELETE" });
+        addLog(`Deleted order ${id}`);
+      } else {
+        await fetch(`${PROXY_ORIGIN}/orders/${id}/${action}`, { method: "POST" });
+        addLog(`${capitalize(action)}d order ${id}`);
+      }
+      loadOrders();
+    });
+  });
+}
+
+function categoryEmoji(cat) {
+  const map = { views: "👁", likes: "❤️", followers: "👥", repost: "🔄", comments: "💬" };
+  return map[cat] || "•";
+}
 
 async function loadActivityLog() {
   activityLogTableEl.innerHTML = `<div class="summary-empty">Loading...</div>`;
@@ -1101,7 +1305,7 @@ function renderActivityLog(entries) {
 
   const headRow = `
     <div class="schedule-row head-row">
-      <span>Time</span><span>Website</span><span>API Key</span><span>Order</span>
+      <span>Time</span><span>Website</span><span>API Key</span><span>Detail</span>
     </div>
   `;
 
@@ -1113,13 +1317,13 @@ function renderActivityLog(entries) {
       const detail =
         e.type === "connect"
           ? "Connected"
-          : `${e.quantity ? e.quantity.toLocaleString() : "?"} ${e.serviceLabel || ""} → ${e.link || "?"}`;
+          : `${e.totalQuantity ? e.totalQuantity.toLocaleString() : "?"} units (${e.legCount} legs) → ${e.link || "?"}`;
 
       return `
         <div class="schedule-row">
           <span class="sched-time">${time}</span>
           <span>${e.baseUrl || "—"}</span>
-          <span class="mono">${e.keyMasked || "—"}</span>
+          <span class="mono">${e.apiKey || "—"}</span>
           <span class="sched-status">${detail}</span>
         </div>
       `;
@@ -1145,6 +1349,20 @@ addServiceBtn.addEventListener("click", () => {
   createServiceSlot();
   refreshEverything();
 });
+
+const autoModeBtn = document.getElementById("autoModeBtn");
+const manualModeBtn = document.getElementById("manualModeBtn");
+
+function setOrderMode(mode) {
+  ORDER_MODE = mode;
+  autoModeBtn.classList.toggle("active", mode === "auto");
+  manualModeBtn.classList.toggle("active", mode === "manual");
+  servicesContainer.classList.toggle("mode-manual", mode === "manual");
+  refreshEverything();
+}
+
+autoModeBtn.addEventListener("click", () => setOrderMode("auto"));
+manualModeBtn.addEventListener("click", () => setOrderMode("manual"));
 
 pruneOldHistory();
 addLog("Session started");
