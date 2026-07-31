@@ -41,6 +41,10 @@ const DEMO_CATALOG = {
   repost: [
     { id: 6011, name: "Instagram Repost [Real Accounts]", rate: 15, min: 5, max: 10000 },
   ],
+  comments: [
+    { id: 7001, name: "Instagram Comments [Custom, Real]", rate: 25, min: 5, max: 5000 },
+    { id: 7002, name: "Instagram Comments [Emoji, Fast]", rate: 15, min: 10, max: 10000 },
+  ],
 };
 
 let CATALOG = DEMO_CATALOG;
@@ -161,6 +165,9 @@ function getHistoryForLink(link) {
 // ELEMENT REFERENCES
 // ==========================================
 const servicesContainer = document.getElementById("servicesContainer");
+const extraServicesContainer = document.getElementById("extraServicesContainer");
+const extraServicesHead = document.getElementById("extraServicesHead");
+const extraServicesCount = document.getElementById("extraServicesCount");
 const addServiceBtn = document.getElementById("addServiceBtn");
 const serviceTemplate = document.getElementById("serviceTemplate");
 
@@ -399,7 +406,7 @@ function renderFetchedServices(list) {
 }
 
 function rebuildAllCategoryDropdowns() {
-  servicesContainer.querySelectorAll(".service-card").forEach((card) => {
+  getAllServiceCards().forEach((card) => {
     populateCategorySelect(card.querySelector(".category-select"));
   });
   refreshEverything();
@@ -447,9 +454,18 @@ function populateGraphSelect(select, currentValue) {
 }
 
 function refreshAllGraphSelects() {
-  servicesContainer.querySelectorAll(".graph-select").forEach((select) => {
-    populateGraphSelect(select, select.value);
+  getAllServiceCards().forEach((card) => {
+    card.querySelectorAll(".graph-select").forEach((select) => {
+      populateGraphSelect(select, select.value);
+    });
   });
+}
+
+function getAllServiceCards() {
+  return [
+    ...servicesContainer.querySelectorAll(".service-card"),
+    ...extraServicesContainer.querySelectorAll(".service-card"),
+  ];
 }
 
 // ==========================================
@@ -467,7 +483,12 @@ function createServiceSlot() {
   card.dataset.selectedMax = "1000000";
   card.customGraphPoints = null;
 
-  servicesContainer.appendChild(card);
+  const isFirstSlot = servicesContainer.children.length === 0;
+  if (isFirstSlot) {
+    servicesContainer.appendChild(card);
+  } else {
+    extraServicesContainer.appendChild(card);
+  }
   card.querySelector(".slot-label").textContent = `Slot ${slotCounter}`;
 
   const categorySelect = card.querySelector(".category-select");
@@ -481,8 +502,35 @@ function createServiceSlot() {
   const graphSelect = card.querySelector(".graph-select");
   const editGraphBtn = card.querySelector(".edit-graph-btn");
 
+  const autoLegsInput = card.querySelector(".auto-legs");
+  const autoDurationValue = card.querySelector(".auto-duration-value");
+  const autoDurationUnit = card.querySelector(".auto-duration-unit");
+  const varianceInput = card.querySelector(".variance");
+  const varianceReadout = card.querySelector(".variance-readout");
+  const roundrobinNoteEl = card.querySelector(".roundrobin-note");
+  const commentsBlock = card.querySelector(".comments-block");
+  const commentsTextarea = card.querySelector(".custom-comments");
+  const showLegsToggle = card.querySelector(".show-legs-toggle");
+
   populateCategorySelect(categorySelect);
   populateGraphSelect(graphSelect, "organic1");
+  updateRoundRobinNote();
+  updateCommentsVisibility();
+
+  function updateRoundRobinNote() {
+    const pool = CATALOG[categorySelect.value] || [];
+    if (pool.length > 1) {
+      roundrobinNoteEl.textContent = `🔀 Round-robin across ${pool.length} services: ${pool.map((s) => s.name).join(", ")}`;
+    } else if (pool.length === 1) {
+      roundrobinNoteEl.textContent = `Using: ${pool[0].name}`;
+    } else {
+      roundrobinNoteEl.textContent = "";
+    }
+  }
+
+  function updateCommentsVisibility() {
+    commentsBlock.style.display = categorySelect.value === "comments" ? "block" : "none";
+  }
 
   function renderDropdown(query) {
     const category = categorySelect.value;
@@ -541,6 +589,8 @@ function createServiceSlot() {
     searchInput.value = "";
     noteEl.textContent = "No service selected yet";
     noteEl.classList.remove("filled");
+    updateRoundRobinNote();
+    updateCommentsVisibility();
     refreshEverything();
   });
 
@@ -550,21 +600,36 @@ function createServiceSlot() {
     refreshEverything();
   });
 
-  [qtyInput, durationInput, graphSelect].forEach((input) => {
+  varianceInput.addEventListener("input", () => {
+    varianceReadout.textContent = `${varianceInput.value}%`;
+    refreshEverything();
+  });
+
+  [qtyInput, durationInput, graphSelect, autoLegsInput, autoDurationValue, autoDurationUnit, commentsTextarea].forEach((input) => {
     input.addEventListener("input", () => refreshEverything());
     input.addEventListener("change", () => refreshEverything());
   });
 
   editGraphBtn.addEventListener("click", () => openGraphModal(card));
+  showLegsToggle.addEventListener("change", () => refreshEverything());
 
   card.querySelector(".remove-btn").addEventListener("click", () => {
     card.remove();
     addLog(`Removed slot ${card.dataset.id}`);
+    updateExtraServicesHeader();
     refreshEverything();
   });
 
   updateCardPreview(card);
+  updateExtraServicesHeader();
   addLog(`Added slot ${slotCounter}`);
+}
+
+function updateExtraServicesHeader() {
+  const count = extraServicesContainer.children.length;
+  extraServicesHead.style.display = count > 0 ? "flex" : "none";
+  extraServicesCount.textContent = count > 0 ? `(${count})` : "";
+  if (count === 0) extraServicesContainer.style.display = "none";
 }
 
 // ==========================================
@@ -715,36 +780,6 @@ function generateLegs(quantity, durationHours, randomness, curvePoints, minQty) 
 // ==========================================
 // CARD PREVIEW
 // ==========================================
-function generateSyncedLegsWithReduction(quantity, minQty, referenceLegs) {
-  const maxLegsAllowed = minQty > 0 ? Math.max(1, Math.floor(quantity / minQty)) : referenceLegs.length;
-  let reference = referenceLegs;
-  let reduced = false;
-  let neededQtyForFull = null;
-
-  if (maxLegsAllowed < referenceLegs.length) {
-    reduced = true;
-    neededQtyForFull = minQty * referenceLegs.length;
-    const step = referenceLegs.length / maxLegsAllowed;
-    reference = [];
-    for (let i = 0; i < maxLegsAllowed; i++) {
-      reference.push(referenceLegs[Math.min(referenceLegs.length - 1, Math.round(i * step))]);
-    }
-  }
-
-  const weightSum = reference.reduce((a, l) => a + l.amount, 0) || 1;
-  let remaining = quantity;
-  let legs = reference.map((refLeg, i) => {
-    const isLast = i === reference.length - 1;
-    const amount = isLast ? remaining : Math.round((refLeg.amount / weightSum) * quantity);
-    remaining -= isLast ? 0 : amount;
-    return { index: i + 1, amount, minutesAt: refLeg.minutesAt };
-  });
-  legs = legs.filter((l) => l.amount > 0);
-  legs = enforceMinimum(legs, minQty);
-
-  return { legs, reduced, fromCount: referenceLegs.length, toCount: legs.length, neededQtyForFull };
-}
-
 function updateCardPreview(card) {
   const categorySelect = card.querySelector(".category-select");
   const qtyInput = card.querySelector(".qty");
@@ -774,29 +809,45 @@ function updateCardPreview(card) {
     qtyWarningEl.textContent = "";
   }
 
-  const allCards = [...servicesContainer.querySelectorAll(".service-card")];
+  const allCards = getAllServiceCards();
   const isFirstCard = allCards[0] === card;
   const referenceCard = allCards[0];
 
   let legs;
   let syncInfo = null;
+  let serviceIdsForLegs = null;
 
-  if (ORDER_MODE === "manual") {
-    const legsCountInput = card.querySelector(".manual-legs");
-    const delayInput = card.querySelector(".manual-delay");
-    const legsCount = Math.max(1, parseInt(legsCountInput.value, 10) || 1);
-    const delayMinutes = Math.max(1, parseInt(delayInput.value, 10) || 1);
-    legs = generateManualLegs(quantity, legsCount, delayMinutes, minQty);
-  } else if (!isFirstCard && referenceCard && referenceCard._lastLegs && referenceCard._lastLegs.length > 0) {
+  if (!isFirstCard && referenceCard && referenceCard._lastLegs && referenceCard._lastLegs.length > 0) {
     const result = generateSyncedLegsWithReduction(quantity, minQty, referenceCard._lastLegs);
     legs = result.legs;
     syncInfo = result;
-  } else {
+  } else if (ORDER_MODE === "manual") {
     const curvePoints = getCurveForCard(card);
     legs = generateLegs(quantity, durationHours, randomness, curvePoints, minQty);
+  } else {
+    const autoLegsInput = card.querySelector(".auto-legs");
+    const autoDurationValue = card.querySelector(".auto-duration-value");
+    const autoDurationUnit = card.querySelector(".auto-duration-unit");
+    const varianceInput = card.querySelector(".variance");
+
+    const requestedLegs = Math.max(1, parseInt(autoLegsInput.value, 10) || 1);
+    const durationVal = Math.max(1, parseFloat(autoDurationValue.value) || 1);
+    const unitMultiplier = autoDurationUnit.value === "minutes" ? 1 : autoDurationUnit.value === "days" ? 1440 : 60;
+    const totalMinutes = durationVal * unitMultiplier;
+    const variance = Math.min(40, Math.max(5, parseInt(varianceInput.value, 10) || 5));
+
+    legs = generateAutoLegs(quantity, requestedLegs, totalMinutes, variance, minQty);
+
+    const pool = CATALOG[category] || [];
+    if (pool.length > 0) serviceIdsForLegs = assignRoundRobin(pool, legs.length);
   }
 
-  legs = legs.map((l) => ({ ...l, serviceLabel, category }));
+  legs = legs.map((l, i) => ({
+    ...l,
+    serviceLabel,
+    category,
+    serviceId: serviceIdsForLegs ? serviceIdsForLegs[i] : card.dataset.selectedServiceId,
+  }));
   card._lastLegs = legs;
 
   if (showLegsToggle && showLegsToggle.checked) {
@@ -813,7 +864,7 @@ function updateCardPreview(card) {
       `
       )
       .join("");
-  } else {
+  } else if (previewBox) {
     previewBox.style.display = "none";
     previewBox.innerHTML = "";
   }
@@ -822,7 +873,7 @@ function updateCardPreview(card) {
     if (syncInfo && syncInfo.reduced) {
       summaryNoteEl.textContent = `⚠️ Synced to Slot 1's timing, but legs reduced from ${syncInfo.fromCount} to ${syncInfo.toCount} — need at least ${syncInfo.neededQtyForFull.toLocaleString()} quantity to match all ${syncInfo.fromCount} legs.`;
       summaryNoteEl.classList.add("warning");
-    } else if (!isFirstCard && ORDER_MODE !== "manual" && legs.length > 0) {
+    } else if (!isFirstCard && legs.length > 0) {
       summaryNoteEl.textContent = `🔗 Synced with Slot 1's timing — ${legs.length} legs.`;
       summaryNoteEl.classList.remove("warning");
     } else {
@@ -848,7 +899,7 @@ function formatMinutes(mins) {
 // SUMMARY
 // ==========================================
 function updateSummary() {
-  const cards = servicesContainer.querySelectorAll(".service-card");
+  const cards = getAllServiceCards();
   let totalQty = 0;
   let totalCost = 0;
 
@@ -936,7 +987,7 @@ function updateGraph(allLegs) {
 // REFRESH EVERYTHING
 // ==========================================
 function refreshEverything() {
-  const cards = servicesContainer.querySelectorAll(".service-card");
+  const cards = getAllServiceCards();
   let allLegs = [];
 
   cards.forEach((card) => {
@@ -1036,7 +1087,7 @@ saveGraphBtn.addEventListener("click", () => {
 // ORDER CREATION / SCHEDULING
 // ==========================================
 submitOrderBtn.addEventListener("click", async () => {
-  const cards = servicesContainer.querySelectorAll(".service-card");
+  const cards = getAllServiceCards();
   const link = document.getElementById("targetLink").value.trim();
   const name = document.getElementById("scheduleName").value.trim() || "Untitled schedule";
 
