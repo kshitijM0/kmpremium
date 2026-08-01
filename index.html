@@ -100,15 +100,37 @@
 
         <div class="section-title"><span class="card-icon">🧩</span> Services</div>
 
-        <div id="servicesContainer" class="services-container"></div>
+        <!-- AUTO MODE: fixed toggle cards -->
+        <div id="autoServicesBlock">
+          <div id="autoFixedCards" class="fixed-svc-cards"></div>
 
-        <div class="extra-legs-head" id="extraServicesHead" style="display:none;">
-          <span>🦵 Extra Services <span id="extraServicesCount" class="extra-legs-count"></span></span>
-          <button class="extra-legs-expand" id="extraServicesToggle">▾</button>
+          <div class="field-block" style="margin-top:16px;">
+            <span class="field-label">⏱ Leg Gap Mode</span>
+            <div class="gap-mode-row">
+              <button class="gap-mode-btn active" id="gapAutoBtn" data-gap="auto">Auto (8–14 min)</button>
+              <button class="gap-mode-btn" id="gapManualBtn" data-gap="manual">Manual (fixed)</button>
+            </div>
+          </div>
+
+          <div class="extra-legs-head" id="autoExtraLegsHead" style="display:none;">
+            <span>🦵 Extra Services — Legs <span id="autoExtraLegsCount" class="extra-legs-count"></span></span>
+            <button class="extra-legs-expand" id="autoExtraLegsToggle">▾</button>
+          </div>
+          <div id="autoExtraLegsList" class="extra-legs-list" style="display:none;"></div>
         </div>
-        <div id="extraServicesContainer" class="services-container extra-services-container" style="display:none;"></div>
 
-        <button id="addServiceBtn" class="add-slot-btn">+ Add slot</button>
+        <!-- MANUAL MODE: dynamic add/remove slots (old curve system) -->
+        <div id="manualServicesBlock" style="display:none;">
+          <div id="servicesContainer" class="services-container"></div>
+
+          <div class="extra-legs-head" id="extraServicesHead" style="display:none;">
+            <span>🦵 Extra Services <span id="extraServicesCount" class="extra-legs-count"></span></span>
+            <button class="extra-legs-expand" id="extraServicesToggle">▾</button>
+          </div>
+          <div id="extraServicesContainer" class="services-container extra-services-container" style="display:none;"></div>
+
+          <button id="addServiceBtn" class="add-slot-btn">+ Add slot</button>
+        </div>
 
       </div>
 
