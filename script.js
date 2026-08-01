@@ -8,12 +8,14 @@ const PROXY_ORIGIN = PROXY_URL.replace(/\/proxy$/, "");
 // CATEGORY COLORS (used everywhere a category shows on a graph)
 // ==========================================
 const CATEGORY_COLORS = {
-  views: "#ff2d43", // red
-  likes: "#3d9dff", // blue
-  repost: "#ffd23d", // yellow
-  followers: "#33d17a", // green
-  comments: "#b475ff", // purple
-  other: "#9a8286", // muted grey
+  views: "#22c55e",
+  likes: "#3b82f6",
+  share: "#a855f7",
+  save: "#f59e0b",
+  comments: "#facc15",
+  repost: "#fb7185",
+  followers: "#33d17a",
+  other: "#9a8286",
 };
 
 function colorForCategory(cat) {
@@ -44,6 +46,12 @@ const DEMO_CATALOG = {
   comments: [
     { id: 7001, name: "Instagram Comments [Custom, Real]", rate: 25, min: 5, max: 5000 },
     { id: 7002, name: "Instagram Comments [Emoji, Fast]", rate: 15, min: 10, max: 10000 },
+  ],
+  share: [
+    { id: 8001, name: "Instagram Shares [Real]", rate: 8, min: 10, max: 20000 },
+  ],
+  save: [
+    { id: 9001, name: "Instagram Saves [Real]", rate: 10, min: 10, max: 20000 },
   ],
 };
 
@@ -1466,13 +1474,21 @@ addServiceBtn.addEventListener("click", () => {
 
 const autoModeBtn = document.getElementById("autoModeBtn");
 const manualModeBtn = document.getElementById("manualModeBtn");
+const autoServicesBlock = document.getElementById("autoServicesBlock");
+const manualServicesBlock = document.getElementById("manualServicesBlock");
 
 function setOrderMode(mode) {
   ORDER_MODE = mode;
   autoModeBtn.classList.toggle("active", mode === "auto");
   manualModeBtn.classList.toggle("active", mode === "manual");
-  servicesContainer.classList.toggle("mode-manual", mode === "manual");
-  refreshEverything();
+  autoServicesBlock.style.display = mode === "auto" ? "block" : "none";
+  manualServicesBlock.style.display = mode === "manual" ? "block" : "none";
+
+  if (mode === "auto") {
+    refreshAutoTab();
+  } else {
+    refreshEverything();
+  }
 }
 
 autoModeBtn.addEventListener("click", () => setOrderMode("auto"));
