@@ -889,6 +889,24 @@ input[type="range"].randomness::-moz-range-thumb{
   margin: 10px 0 0;
 }
 
+.graph-tooltip{
+  position: absolute;
+  background: #0a0a0d;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.76rem;
+  color: var(--text);
+  pointer-events: none;
+  z-index: 20;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  white-space: nowrap;
+}
+
+.graph-tooltip .tt-time{ color: var(--muted); display:block; margin-bottom:2px; }
+
+.graph-card{ position: relative; }
+
 /* ---------- FIXED SERVICE TOGGLE CARDS (Auto tab) ---------- */
 .fixed-svc-cards{ display:flex; flex-direction: column; gap: 12px; }
 
