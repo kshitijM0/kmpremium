@@ -285,69 +285,31 @@
       <span class="qty-warning"></span>
     </div>
 
-    <div class="auto-fields">
-      <div class="slot-row-secondary">
-        <label class="field">
-          <span class="field-label">Number of Legs</span>
-          <input class="input auto-legs" type="number" min="1" max="250" value="10">
-        </label>
-        <label class="field">
-          <span class="field-label">Duration</span>
-          <div class="duration-combo">
-            <input class="input auto-duration-value" type="number" min="1" value="24">
-            <select class="input auto-duration-unit">
-              <option value="minutes">Minutes</option>
-              <option value="hours" selected>Hours</option>
-              <option value="days">Days</option>
-            </select>
-          </div>
-        </label>
-      </div>
-
-      <div class="field-block randomness-block">
-        <span class="field-label">
-          Variance — <span class="variance-readout mono">22%</span>
-        </span>
-        <input class="input full variance" type="range" min="5" max="40" value="22">
-        <span class="randomness-caption">Higher variance = more natural, irregular leg sizes and timing</span>
-      </div>
-
-      <div class="roundrobin-note"></div>
-
-      <div class="comments-block" style="display:none;">
-        <span class="field-label">💬 Custom Comments (one per line)</span>
-        <textarea class="input full custom-comments" rows="4" placeholder="Wow amazing post!&#10;Love this ❤️&#10;Great content, keep it up!"></textarea>
-        <span class="comments-hint"></span>
-      </div>
+    <div class="field-block">
+      <span class="field-label">Duration (hours)</span>
+      <input class="input full duration" type="number" min="1" max="72" value="24">
     </div>
 
-    <div class="manual-fields">
-      <div class="field-block">
-        <span class="field-label">Duration (hours)</span>
-        <input class="input full duration" type="number" min="1" max="72" value="24">
-      </div>
+    <div class="field-block randomness-block">
+      <span class="field-label">
+        Delivery randomness — <span class="randomness-readout mono">18%</span>
+      </span>
+      <input class="input full randomness" type="range" min="1" max="40" value="18">
+      <span class="randomness-caption">At 40% delivery becomes fully random (real drip-style, spread over 12–24h)</span>
+    </div>
 
-      <div class="field-block randomness-block">
-        <span class="field-label">
-          Delivery randomness — <span class="randomness-readout mono">18%</span>
-        </span>
-        <input class="input full randomness" type="range" min="1" max="40" value="18">
-        <span class="randomness-caption">At 40% delivery becomes fully random (real drip-style, spread over 12–24h)</span>
-      </div>
-
-      <div class="field-block graph-select-block">
-        <span class="field-label">Delivery curve</span>
-        <div class="graph-select-row">
-          <select class="input full graph-select">
-            <option value="steady">Steady Drip</option>
-            <option value="burst">Instant Burst</option>
-            <option value="late">Late Spike</option>
-            <option value="organic1" selected>Organic — Morning Rise</option>
-            <option value="organic2">Organic — Evening Wave</option>
-            <option value="custom">Custom (edit below)</option>
-          </select>
-          <button class="edit-graph-btn">Edit</button>
-        </div>
+    <div class="field-block graph-select-block">
+      <span class="field-label">Delivery curve</span>
+      <div class="graph-select-row">
+        <select class="input full graph-select">
+          <option value="steady">Steady Drip</option>
+          <option value="burst">Instant Burst</option>
+          <option value="late">Late Spike</option>
+          <option value="organic1" selected>Organic — Morning Rise</option>
+          <option value="organic2">Organic — Evening Wave</option>
+          <option value="custom">Custom (edit below)</option>
+        </select>
+        <button class="edit-graph-btn">Edit</button>
       </div>
     </div>
 
