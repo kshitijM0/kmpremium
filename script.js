@@ -641,6 +641,301 @@ function updateExtraServicesHeader() {
 }
 
 // ==========================================
+// AUTO TAB — fixed 6-service toggle cards
+// ==========================================
+const FIXED_SERVICES = [
+  { key: "views", emoji: "👁", label: "Views", primary: true, defaultOn: true, defaultQty: 5000 },
+  { key: "likes", emoji: "❤️", label: "Like", defaultOn: true, defaultQty: 500 },
+  { key: "share", emoji: "📤", label: "Share", defaultQty: 100 },
+  { key: "save", emoji: "🔖", label: "Save", defaultQty: 100 },
+  { key: "comments", emoji: "💬", label: "Comments", defaultQty: 20 },
+  { key: "repost", emoji: "🔁", label: "Repost", defaultQty: 50 },
+];
+
+let GAP_MODE = "auto";
+
+const autoFixedCardsEl = document.getElementById("autoFixedCards");
+const gapAutoBtn = document.getElementById("gapAutoBtn");
+const gapManualBtn = document.getElementById("gapManualBtn");
+const autoExtraLegsHead = document.getElementById("autoExtraLegsHead");
+const autoExtraLegsCount = document.getElementById("autoExtraLegsCount");
+const autoExtraLegsToggle = document.getElementById("autoExtraLegsToggle");
+const autoExtraLegsList = document.getElementById("autoExtraLegsList");
+
+const legOverrides = {};
+
+function renderFixedCards() {
+  autoFixedCardsEl.innerHTML = FIXED_SERVICES.map((svc) => {
+    const pool = CATALOG[svc.key] || [];
+    const defaultIds = pool.map((s) => s.id).join(", ");
+
+    const primaryFields = svc.primary
+      ? `
+        <div class="fixed-svc-row2">
+          <label class="field">
+            <span class="field-label">Number of Legs</span>
+            <input class="input auto-views-legs" type="number" min="1" max="250" value="10">
+          </label>
+          <label class="field">
+            <span class="field-label">Duration</span>
+            <div class="duration-combo">
+              <input class="input auto-views-duration-value" type="number" min="1" value="24">
+              <select class="input auto-views-duration-unit">
+                <option value="minutes">Min</option>
+                <option value="hours" selected>Hrs</option>
+                <option value="days">Days</option>
+              </select>
+            </div>
+          </label>
+        </div>
+      `
+      : "";
+
+    return `
+      <div class="fixed-svc-card ${svc.defaultOn ? "" : "disabled"}" id="svcCard-${svc.key}" style="--tc:${colorForCategory(svc.key)}">
+        <div class="fixed-svc-head">
+          <span class="fixed-svc-badge">${svc.emoji} ${svc.label}${svc.primary ? '<span class="fixed-svc-primary-tag">PRIMARY</span>' : ""}</span>
+          <label class="svc-toggle">
+            <input type="checkbox" class="svc-enable-toggle" data-key="${svc.key}" ${svc.defaultOn ? "checked" : ""}>
+            <span class="svc-toggle-track"></span>
+          </label>
+        </div>
+        <div class="fixed-svc-body">
+          ${primaryFields}
+          <div class="fixed-svc-row2">
+            <label class="field">
+              <span class="field-label">Quantity</span>
+              <input class="input auto-qty" type="number" min="1" value="${svc.defaultQty}">
+            </label>
+            <label class="field">
+              <span class="field-label">Service IDs (round-robin)</span>
+              <input class="input svc-ids-input" type="text" value="${defaultIds}" placeholder="e.g. 3546, 3612">
+            </label>
+          </div>
+          <div class="min-warning-line" id="minWarn-${svc.key}"></div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  FIXED_SERVICES.forEach((svc) => {
+    const card = document.getElementById(`svcCard-${svc.key}`);
+    const toggle = card.querySelector(".svc-enable-toggle");
+    const inputs = card.querySelectorAll("input, select");
+
+    toggle.addEventListener("change", () => {
+      card.classList.toggle("disabled", !toggle.checked);
+      refreshAutoTab();
+    });
+
+    inputs.forEach((inp) => {
+      if (inp === toggle) return;
+      inp.addEventListener("input", () => refreshAutoTab());
+      inp.addEventListener("change", () => refreshAutoTab());
+    });
+  });
+}
+
+gapAutoBtn.addEventListener("click", () => {
+  GAP_MODE = "auto";
+  gapAutoBtn.classList.add("active");
+  gapManualBtn.classList.remove("active");
+  refreshAutoTab();
+});
+gapManualBtn.addEventListener("click", () => {
+  GAP_MODE = "manual";
+  gapManualBtn.classList.add("active");
+  gapAutoBtn.classList.remove("active");
+  refreshAutoTab();
+});
+
+autoExtraLegsToggle.addEventListener("click", () => {
+  const isOpen = autoExtraLegsList.style.display === "flex";
+  autoExtraLegsList.style.display = isOpen ? "none" : "flex";
+  autoExtraLegsToggle.classList.toggle("open", !isOpen);
+});
+
+function getFixedServiceInputs(key) {
+  const card = document.getElementById(`svcCard-${key}`);
+  return {
+    card,
+    enabled: card.querySelector(".svc-enable-toggle").checked,
+    qty: Math.max(0, parseInt(card.querySelector(".auto-qty").value, 10) || 0),
+    idsRaw: card.querySelector(".svc-ids-input").value,
+  };
+}
+
+function parsePoolIds(idsRaw, category) {
+  const typed = idsRaw
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const catalogPool = CATALOG[category] || [];
+  const matched = typed.map((idStr) => {
+    const found = catalogPool.find((s) => String(s.id) === idStr);
+    return found || { id: idStr, rate: catalogPool[0] ? catalogPool[0].rate : 10, min: catalogPool[0] ? catalogPool[0].min : 1, max: catalogPool[0] ? catalogPool[0].max : 1000000 };
+  });
+
+  return matched.length > 0 ? matched : catalogPool;
+}
+
+function assignRoundRobin(pool, count) {
+  return Array.from({ length: count }, (_, i) => pool[i % pool.length].id);
+}
+
+function generateAutoLegs(quantity, legsCount, totalMinutes, gapMode, minQty) {
+  const variance = gapMode === "manual" ? 0 : 22;
+  const base = Math.floor(quantity / legsCount);
+  let remaining = quantity;
+  let legs = [];
+
+  for (let i = 0; i < legsCount; i++) {
+    const isLast = i === legsCount - 1;
+    let amount = isLast ? remaining : base;
+    if (!isLast && variance > 0) amount = Math.max(0, Math.round(jitter(amount, variance)));
+    remaining -= isLast ? 0 : amount;
+
+    let minutesAt = legsCount > 1 ? (i / (legsCount - 1)) * totalMinutes : 0;
+    if (variance > 0 && i > 0 && !isLast) {
+      const avgGap = totalMinutes / (legsCount - 1 || 1);
+      minutesAt += (Math.random() * 2 - 1) * avgGap * (variance / 40);
+    }
+    minutesAt = Math.max(0, Math.round(minutesAt));
+
+    legs.push({ index: i + 1, amount, minutesAt });
+  }
+
+  legs = legs.filter((l) => l.amount > 0);
+  legs.sort((a, b) => a.minutesAt - b.minutesAt);
+  legs.forEach((l, idx) => (l.index = idx + 1));
+
+  const sumSoFar = legs.reduce((a, l) => a + l.amount, 0);
+  if (legs.length > 0) legs[legs.length - 1].amount += quantity - sumSoFar;
+
+  legs = enforceMinimum(legs, minQty);
+  return legs;
+}
+
+function refreshAutoTab() {
+  const viewsState = getFixedServiceInputs("views");
+  const viewsCard = document.getElementById("svcCard-views");
+  const viewsPool = parsePoolIds(viewsState.idsRaw, "views");
+  const viewsMinQty = Math.max(...viewsPool.map((s) => s.min));
+  const viewsRate = viewsPool.reduce((a, s) => a + s.rate, 0) / viewsPool.length;
+
+  document.getElementById("minWarn-views").textContent =
+    viewsState.qty > 0 && viewsState.qty < viewsMinQty ? `⚠️ Below minimum (${viewsMinQty.toLocaleString()}) for this service pool.` : "";
+
+  let viewsLegs = [];
+  if (viewsState.enabled && viewsState.qty > 0) {
+    const legsCountInput = viewsCard.querySelector(".auto-views-legs");
+    const durationValueInput = viewsCard.querySelector(".auto-views-duration-value");
+    const durationUnitInput = viewsCard.querySelector(".auto-views-duration-unit");
+
+    const legsCount = Math.max(1, parseInt(legsCountInput.value, 10) || 1);
+    const durationVal = Math.max(1, parseFloat(durationValueInput.value) || 1);
+    const unitMultiplier = durationUnitInput.value === "minutes" ? 1 : durationUnitInput.value === "days" ? 1440 : 60;
+    const totalMinutes = durationVal * unitMultiplier;
+
+    viewsLegs = generateAutoLegs(viewsState.qty, legsCount, totalMinutes, GAP_MODE, viewsMinQty);
+    const serviceIds = assignRoundRobin(viewsPool, viewsLegs.length);
+    viewsLegs = viewsLegs.map((l, i) => ({ ...l, serviceLabel: "Views", category: "views", serviceId: serviceIds[i] }));
+  }
+
+  let allLegs = [...viewsLegs];
+  const extraOverrideRows = [];
+
+  FIXED_SERVICES.filter((s) => !s.primary).forEach((svc) => {
+    const state = getFixedServiceInputs(svc.key);
+    const pool = parsePoolIds(state.idsRaw, svc.key);
+    const minQty = Math.max(...pool.map((s) => s.min));
+
+    document.getElementById(`minWarn-${svc.key}`).textContent =
+      state.qty > 0 && state.qty < minQty ? `⚠️ Below minimum (${minQty.toLocaleString()}) for this service pool.` : "";
+
+    if (!state.enabled || state.qty <= 0 || viewsLegs.length === 0) return;
+
+    const result = generateSyncedLegsWithReduction(state.qty, minQty, viewsLegs);
+    let legs = result.legs;
+
+    const override = legOverrides[svc.key];
+    if (override && override < legs.length) {
+      const step = legs.length / override;
+      const subsampled = [];
+      for (let i = 0; i < override; i++) subsampled.push(legs[Math.min(legs.length - 1, Math.round(i * step))]);
+      const sync2 = generateSyncedLegsWithReduction(state.qty, minQty, subsampled);
+      legs = sync2.legs;
+    }
+
+    const serviceIds = assignRoundRobin(pool, legs.length);
+    legs = legs.map((l, i) => ({ ...l, serviceLabel: capitalize(svc.key), category: svc.key, serviceId: serviceIds[i] }));
+    allLegs = allLegs.concat(legs);
+
+    if (result.reduced || (override && override !== result.legs.length)) {
+      const maxAllowed = Math.floor(state.qty / minQty) || 1;
+      extraOverrideRows.push({ key: svc.key, label: svc.label || capitalize(svc.key), emoji: svc.emoji, max: maxAllowed, current: legs.length });
+    }
+  });
+
+  if (extraOverrideRows.length > 0) {
+    autoExtraLegsHead.style.display = "flex";
+    autoExtraLegsCount.textContent = `(${extraOverrideRows.length})`;
+    autoExtraLegsList.innerHTML = extraOverrideRows
+      .map((row) => {
+        const options = Array.from({ length: row.max }, (_, i) => i + 1)
+          .map((n) => `<option value="${n}" ${n === row.current ? "selected" : ""}>${n}</option>`)
+          .join("");
+        return `
+          <div class="svc-leg-select-row">
+            <span>${row.emoji} ${row.label} <span style="color:#ffb42d;font-weight:600;">(max ${row.max})</span></span>
+            <select data-key="${row.key}" class="leg-override-select">${options}</select>
+          </div>
+        `;
+      })
+      .join("");
+
+    autoExtraLegsList.querySelectorAll(".leg-override-select").forEach((sel) => {
+      sel.addEventListener("change", () => {
+        legOverrides[sel.dataset.key] = parseInt(sel.value, 10);
+        refreshAutoTab();
+      });
+    });
+  } else {
+    autoExtraLegsHead.style.display = "none";
+    autoExtraLegsList.style.display = "none";
+  }
+
+  window._autoTabLegs = allLegs;
+
+  let totalQty = 0;
+  let totalCost = 0;
+  allLegs.forEach((l) => {
+    totalQty += l.amount;
+    const pool = CATALOG[l.category] || [];
+    const rate = pool.length ? pool.reduce((a, s) => a + s.rate, 0) / pool.length : 10;
+    totalCost += (l.amount / 1000) * rate;
+  });
+  totalQtyEl.textContent = totalQty.toLocaleString();
+  totalCostEl.textContent = formatCost(totalCost);
+
+  updateGraph(allLegs);
+}
+
+function computeAutoTabLegs(link) {
+  refreshAutoTab();
+  const legs = window._autoTabLegs || [];
+  return legs.map((l) => ({
+    serviceId: l.serviceId,
+    link,
+    quantity: l.amount,
+    category: l.category,
+    serviceLabel: l.serviceLabel,
+    fireInMs: l.minutesAt * 60000,
+  }));
+}
+
+// ==========================================
 // LEG GENERATION
 // ==========================================
 function getCurveForCard(card) {
@@ -683,6 +978,36 @@ function enforceMinimum(legs, minQty) {
 
   arr.forEach((l, idx) => (l.index = idx + 1));
   return arr;
+}
+
+function generateSyncedLegsWithReduction(quantity, minQty, referenceLegs) {
+  const maxLegsAllowed = minQty > 0 ? Math.max(1, Math.floor(quantity / minQty)) : referenceLegs.length;
+  let reference = referenceLegs;
+  let reduced = false;
+  let neededQtyForFull = null;
+
+  if (maxLegsAllowed < referenceLegs.length) {
+    reduced = true;
+    neededQtyForFull = minQty * referenceLegs.length;
+    const step = referenceLegs.length / maxLegsAllowed;
+    reference = [];
+    for (let i = 0; i < maxLegsAllowed; i++) {
+      reference.push(referenceLegs[Math.min(referenceLegs.length - 1, Math.round(i * step))]);
+    }
+  }
+
+  const weightSum = reference.reduce((a, l) => a + l.amount, 0) || 1;
+  let remaining = quantity;
+  let legs = reference.map((refLeg, i) => {
+    const isLast = i === reference.length - 1;
+    const amount = isLast ? remaining : Math.round((refLeg.amount / weightSum) * quantity);
+    remaining -= isLast ? 0 : amount;
+    return { index: i + 1, amount, minutesAt: refLeg.minutesAt };
+  });
+  legs = legs.filter((l) => l.amount > 0);
+  legs = enforceMinimum(legs, minQty);
+
+  return { legs, reduced, fromCount: referenceLegs.length, toCount: legs.length, neededQtyForFull };
 }
 
 function resampleCurve(points, targetCount) {
@@ -976,6 +1301,8 @@ function drawMultiLineGraph(linesGroupEl, legendEl, legsByCategory, width, heigh
       </div>
     `;
   });
+
+  window._growthGraphHoverData = { cumulativeByCategory, maxT, maxV, width, height, padding, toXY };
 }
 
 function updateGraph(allLegs) {
@@ -1095,15 +1422,8 @@ saveGraphBtn.addEventListener("click", () => {
 // ORDER CREATION / SCHEDULING
 // ==========================================
 submitOrderBtn.addEventListener("click", async () => {
-  const cards = getAllServiceCards();
   const link = document.getElementById("targetLink").value.trim();
   const name = document.getElementById("scheduleName").value.trim() || "Untitled schedule";
-
-  if (cards.length === 0) {
-    orderStatusEl.textContent = "Add at least one service slot first.";
-    orderStatusEl.className = "connect-status error";
-    return;
-  }
 
   if (!link) {
     orderStatusEl.textContent = "Add a target link first.";
@@ -1111,26 +1431,43 @@ submitOrderBtn.addEventListener("click", async () => {
     return;
   }
 
-  const allLegsForOrder = [];
-  cards.forEach((card) => {
-    const { legs, serviceLabel, category, serviceId } = updateCardPreview(card);
-    legs.forEach((leg) => {
-      allLegsForOrder.push({
-        serviceId,
-        link,
-        quantity: leg.amount,
-        category,
-        serviceLabel,
-        fireInMs: leg.minutesAt * 60000,
+  let allLegsForOrder = [];
+
+  if (ORDER_MODE === "auto") {
+    allLegsForOrder = computeAutoTabLegs(link);
+    if (allLegsForOrder.length === 0) {
+      orderStatusEl.textContent = "Turn on at least one service first.";
+      orderStatusEl.className = "connect-status error";
+      return;
+    }
+  } else {
+    const cards = getAllServiceCards();
+    if (cards.length === 0) {
+      orderStatusEl.textContent = "Add at least one service slot first.";
+      orderStatusEl.className = "connect-status error";
+      return;
+    }
+    cards.forEach((card) => {
+      const { legs, serviceLabel, category, serviceId } = updateCardPreview(card);
+      legs.forEach((leg) => {
+        allLegsForOrder.push({
+          serviceId,
+          link,
+          quantity: leg.amount,
+          category,
+          serviceLabel,
+          fireInMs: leg.minutesAt * 60000,
+        });
       });
-      const fireAtClock = new Date(Date.now() + leg.minutesAt * 60000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-      addLog(`Queued ${leg.amount.toLocaleString()} ${serviceLabel} for ${fireAtClock}`);
     });
+  }
+
+  allLegsForOrder.forEach((leg) => {
+    const fireAtClock = new Date(Date.now() + leg.fireInMs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    addLog(`Queued ${leg.quantity.toLocaleString()} ${leg.serviceLabel} for ${fireAtClock}`);
   });
 
   if (PANEL.connected) {
-    // Real panel connected — hand the whole schedule to the server so it
-    // keeps firing even if this tab gets closed.
     orderStatusEl.textContent = "Sending schedule to the server...";
     orderStatusEl.className = "connect-status";
     try {
@@ -1152,7 +1489,6 @@ submitOrderBtn.addEventListener("click", async () => {
       addLog(`Failed to schedule order "${name}" on the server`);
     }
   } else {
-    // No real panel connected — simulate locally in this tab (demo mode).
     allLegsForOrder.forEach((leg) => {
       setTimeout(
         () => simulateDeliverLeg(leg.serviceLabel, leg.category, leg.quantity, leg.link),
@@ -1504,5 +1840,51 @@ if (savedCreds && savedCreds.baseUrl) {
   attemptConnect(savedCreds.baseUrl, savedCreds.apiKey, true);
 }
 
+// ==========================================
+// GROWTH GRAPH — hover tooltip
+// ==========================================
+const growthSvgEl = document.getElementById("growthSvg");
+const growthTooltipEl = document.getElementById("growthTooltip");
+
+growthSvgEl.addEventListener("mousemove", (e) => {
+  const data = window._growthGraphHoverData;
+  if (!data) return;
+
+  const rect = growthSvgEl.getBoundingClientRect();
+  const scaleX = data.width / rect.width;
+  const localX = (e.clientX - rect.left) * scaleX;
+  const t = ((localX - data.padding) / (data.width - data.padding * 2)) * data.maxT;
+
+  let nearest = null;
+  let nearestDist = Infinity;
+  let nearestCat = null;
+
+  Object.entries(data.cumulativeByCategory).forEach(([cat, points]) => {
+    points.forEach((p) => {
+      const dist = Math.abs(p.t - t);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = p;
+        nearestCat = cat;
+      }
+    });
+  });
+
+  if (!nearest) return;
+
+  growthTooltipEl.style.display = "block";
+  growthTooltipEl.style.left = `${e.clientX - rect.left + 12}px`;
+  growthTooltipEl.style.top = `${e.clientY - rect.top - 10}px`;
+  growthTooltipEl.innerHTML = `
+    <span class="tt-time">${formatMinutes(Math.round(nearest.t))}</span>
+    <b style="color:${colorForCategory(nearestCat)}">${capitalize(nearestCat)}: ${nearest.v.toLocaleString()}</b>
+  `;
+});
+
+growthSvgEl.addEventListener("mouseleave", () => {
+  growthTooltipEl.style.display = "none";
+});
+
 createServiceSlot();
-refreshEverything();
+renderFixedCards();
+setOrderMode("auto");
