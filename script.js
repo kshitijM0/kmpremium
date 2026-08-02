@@ -510,35 +510,10 @@ function createServiceSlot() {
   const graphSelect = card.querySelector(".graph-select");
   const editGraphBtn = card.querySelector(".edit-graph-btn");
 
-  const autoLegsInput = card.querySelector(".auto-legs");
-  const autoDurationValue = card.querySelector(".auto-duration-value");
-  const autoDurationUnit = card.querySelector(".auto-duration-unit");
-  const varianceInput = card.querySelector(".variance");
-  const varianceReadout = card.querySelector(".variance-readout");
-  const roundrobinNoteEl = card.querySelector(".roundrobin-note");
-  const commentsBlock = card.querySelector(".comments-block");
-  const commentsTextarea = card.querySelector(".custom-comments");
   const showLegsToggle = card.querySelector(".show-legs-toggle");
 
   populateCategorySelect(categorySelect);
   populateGraphSelect(graphSelect, "organic1");
-  updateRoundRobinNote();
-  updateCommentsVisibility();
-
-  function updateRoundRobinNote() {
-    const pool = CATALOG[categorySelect.value] || [];
-    if (pool.length > 1) {
-      roundrobinNoteEl.textContent = `🔀 Round-robin across ${pool.length} services: ${pool.map((s) => s.name).join(", ")}`;
-    } else if (pool.length === 1) {
-      roundrobinNoteEl.textContent = `Using: ${pool[0].name}`;
-    } else {
-      roundrobinNoteEl.textContent = "";
-    }
-  }
-
-  function updateCommentsVisibility() {
-    commentsBlock.style.display = categorySelect.value === "comments" ? "block" : "none";
-  }
 
   function renderDropdown(query) {
     const category = categorySelect.value;
@@ -597,8 +572,6 @@ function createServiceSlot() {
     searchInput.value = "";
     noteEl.textContent = "No service selected yet";
     noteEl.classList.remove("filled");
-    updateRoundRobinNote();
-    updateCommentsVisibility();
     refreshEverything();
   });
 
@@ -608,12 +581,7 @@ function createServiceSlot() {
     refreshEverything();
   });
 
-  varianceInput.addEventListener("input", () => {
-    varianceReadout.textContent = `${varianceInput.value}%`;
-    refreshEverything();
-  });
-
-  [qtyInput, durationInput, graphSelect, autoLegsInput, autoDurationValue, autoDurationUnit, commentsTextarea].forEach((input) => {
+  [qtyInput, durationInput, graphSelect].forEach((input) => {
     input.addEventListener("input", () => refreshEverything());
     input.addEventListener("change", () => refreshEverything());
   });
@@ -1148,38 +1116,21 @@ function updateCardPreview(card) {
 
   let legs;
   let syncInfo = null;
-  let serviceIdsForLegs = null;
 
   if (!isFirstCard && referenceCard && referenceCard._lastLegs && referenceCard._lastLegs.length > 0) {
     const result = generateSyncedLegsWithReduction(quantity, minQty, referenceCard._lastLegs);
     legs = result.legs;
     syncInfo = result;
-  } else if (ORDER_MODE === "manual") {
+  } else {
     const curvePoints = getCurveForCard(card);
     legs = generateLegs(quantity, durationHours, randomness, curvePoints, minQty);
-  } else {
-    const autoLegsInput = card.querySelector(".auto-legs");
-    const autoDurationValue = card.querySelector(".auto-duration-value");
-    const autoDurationUnit = card.querySelector(".auto-duration-unit");
-    const varianceInput = card.querySelector(".variance");
-
-    const requestedLegs = Math.max(1, parseInt(autoLegsInput.value, 10) || 1);
-    const durationVal = Math.max(1, parseFloat(autoDurationValue.value) || 1);
-    const unitMultiplier = autoDurationUnit.value === "minutes" ? 1 : autoDurationUnit.value === "days" ? 1440 : 60;
-    const totalMinutes = durationVal * unitMultiplier;
-    const variance = Math.min(40, Math.max(5, parseInt(varianceInput.value, 10) || 5));
-
-    legs = generateAutoLegs(quantity, requestedLegs, totalMinutes, variance, minQty);
-
-    const pool = CATALOG[category] || [];
-    if (pool.length > 0) serviceIdsForLegs = assignRoundRobin(pool, legs.length);
   }
 
-  legs = legs.map((l, i) => ({
+  legs = legs.map((l) => ({
     ...l,
     serviceLabel,
     category,
-    serviceId: serviceIdsForLegs ? serviceIdsForLegs[i] : card.dataset.selectedServiceId,
+    serviceId: card.dataset.selectedServiceId,
   }));
   card._lastLegs = legs;
 
