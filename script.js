@@ -608,6 +608,13 @@ function updateExtraServicesHeader() {
   if (count === 0) extraServicesContainer.style.display = "none";
 }
 
+const extraServicesToggleBtn = document.getElementById("extraServicesToggle");
+extraServicesToggleBtn.addEventListener("click", () => {
+  const isOpen = extraServicesContainer.style.display === "flex";
+  extraServicesContainer.style.display = isOpen ? "none" : "flex";
+  extraServicesToggleBtn.classList.toggle("open", !isOpen);
+});
+
 // ==========================================
 // AUTO TAB — fixed 6-service toggle cards
 // ==========================================
