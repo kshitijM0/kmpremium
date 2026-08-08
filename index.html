@@ -44,6 +44,10 @@
 
       <div class="api-card">
         <div class="field-block">
+          <span class="field-label">Profile name (optional)</span>
+          <input id="profileNameInput" class="input full" type="text" placeholder="e.g. YoYo Media">
+        </div>
+        <div class="field-block">
           <span class="field-label">Panel website / API URL</span>
           <input id="apiBaseUrl" class="input full" type="text" placeholder="https://yoyomedia.in/api/v2">
         </div>
@@ -52,8 +56,14 @@
           <input id="apiKeyInput" class="input full" type="text" placeholder="Your panel API key">
         </div>
 
-        <button id="connectBtn" class="submit-btn">Connect</button>
+        <button id="connectBtn" class="submit-btn">Connect &amp; Save</button>
         <div id="connectStatus" class="connect-status"></div>
+      </div>
+
+      <div class="api-card">
+        <div class="card-title" style="margin-bottom:10px;">💾 Saved panels</div>
+        <p style="color:var(--muted); font-size:0.8rem; margin:0 0 12px;">Add up to a few panels — Auto tab automatically round-robins across all of them.</p>
+        <div id="profilesList" class="profiles-list"></div>
 
         <div class="help-contact-box">
           <span class="field-label">Need help connecting?</span>
