@@ -57,24 +57,26 @@ const DEMO_CATALOG = {
 
 let CATALOG = DEMO_CATALOG;
 let ORDER_MODE = "auto";
-let PANEL = { baseUrl: "", apiKey: "", connected: false };
+let PROFILES = []; // [{ id, name, baseUrl, apiKey, connected, catalog }]
+let PANEL = { baseUrl: "", apiKey: "", connected: false }; // "primary" profile — used by Manual tab
 
-const CREDENTIALS_KEY = "km_panel_credentials";
+const PROFILES_KEY = "km_panel_profiles";
 
-function saveCredentials(baseUrl, apiKey) {
+function saveProfiles() {
   try {
-    localStorage.setItem(CREDENTIALS_KEY, JSON.stringify({ baseUrl, apiKey }));
+    const toSave = PROFILES.map((p) => ({ id: p.id, name: p.name, baseUrl: p.baseUrl, apiKey: p.apiKey }));
+    localStorage.setItem(PROFILES_KEY, JSON.stringify(toSave));
   } catch {
     /* storage unavailable — ignore */
   }
 }
 
-function loadCredentials() {
+function loadProfilesFromStorage() {
   try {
-    const raw = localStorage.getItem(CREDENTIALS_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const raw = localStorage.getItem(PROFILES_KEY);
+    return raw ? JSON.parse(raw) : [];
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -326,10 +328,11 @@ async function callPanelAPI(baseUrl, apiKey, actionParams) {
 // PANEL CONNECT
 // ==========================================
 connectBtn.addEventListener("click", () => {
-  attemptConnect(apiBaseUrlInput.value.trim(), apiKeyInputEl.value.trim(), false);
+  const name = document.getElementById("profileNameInput").value.trim() || `Panel ${PROFILES.length + 1}`;
+  attemptConnect(name, apiBaseUrlInput.value.trim(), apiKeyInputEl.value.trim(), false);
 });
 
-async function attemptConnect(baseUrl, apiKey, silent) {
+async function attemptConnect(name, baseUrl, apiKey, silent) {
   if (!baseUrl) {
     if (!silent) {
       connectStatusEl.textContent = "Enter the panel's API URL first.";
@@ -347,22 +350,54 @@ async function attemptConnect(baseUrl, apiKey, silent) {
     const balanceData = await callPanelAPI(baseUrl, apiKey, { action: "balance" });
     const servicesData = await callPanelAPI(baseUrl, apiKey, { action: "services" });
 
+    let balanceText = "";
     if (balanceData && balanceData.balance !== undefined) {
       const currency = balanceData.currency || "$";
-      balanceValueEl.textContent = `${currency}${parseFloat(balanceData.balance).toFixed(2)}`;
+      balanceText = `${currency}${parseFloat(balanceData.balance).toFixed(2)}`;
+      balanceValueEl.textContent = balanceText;
     }
 
+    let profileCatalog = {};
     if (Array.isArray(servicesData)) {
-      CATALOG = groupServicesByCategory(servicesData);
-      renderFetchedServices(servicesData);
-      rebuildAllCategoryDropdowns();
+      profileCatalog = groupServicesByCategory(servicesData);
+      Object.keys(profileCatalog).forEach((cat) => {
+        profileCatalog[cat].forEach((svc) => {
+          svc._baseUrl = baseUrl;
+          svc._apiKey = apiKey;
+        });
+      });
+    }
+
+    const existing = PROFILES.find((p) => p.baseUrl === baseUrl && p.apiKey === apiKey);
+    if (existing) {
+      existing.name = name;
+      existing.connected = true;
+      existing.catalog = profileCatalog;
+      existing.balanceText = balanceText;
+    } else {
+      PROFILES.push({
+        id: `profile_${Date.now()}`,
+        name,
+        baseUrl,
+        apiKey,
+        connected: true,
+        catalog: profileCatalog,
+        balanceText,
+      });
     }
 
     PANEL = { baseUrl, apiKey, connected: true };
-    saveCredentials(baseUrl, apiKey);
-    connectStatusEl.textContent = "Connected — balance and services loaded.";
+    CATALOG = mergeAllProfileCatalogs();
+    renderFetchedServices(servicesData || []);
+    rebuildAllCategoryDropdowns();
+    saveProfiles();
+    renderProfilesList();
+    renderFixedCards();
+    refreshAutoTab();
+
+    connectStatusEl.textContent = `Connected "${name}" — balance and services loaded.`;
     connectStatusEl.className = "connect-status ok";
-    addLog(`Connected to panel at ${baseUrl}`);
+    addLog(`Connected to panel "${name}" at ${baseUrl}`);
   } catch (err) {
     if (!silent) {
       connectStatusEl.textContent = `Couldn't get a valid response from that panel (${err.message}). Double-check the URL/key and try again — sometimes the proxy just needs a retry.`;
@@ -370,6 +405,52 @@ async function attemptConnect(baseUrl, apiKey, silent) {
     }
     addLog(`Connect failed for ${baseUrl}${silent ? " (auto-reconnect)" : ""}`);
   }
+}
+
+function mergeAllProfileCatalogs() {
+  const merged = {};
+  PROFILES.filter((p) => p.connected).forEach((p) => {
+    Object.keys(p.catalog || {}).forEach((cat) => {
+      if (!merged[cat]) merged[cat] = [];
+      merged[cat] = merged[cat].concat(p.catalog[cat]);
+    });
+  });
+  return Object.keys(merged).length > 0 ? merged : DEMO_CATALOG;
+}
+
+function renderProfilesList() {
+  const el = document.getElementById("profilesList");
+  if (!el) return;
+  if (PROFILES.length === 0) {
+    el.innerHTML = `<div class="summary-empty">No panels saved yet — connect one above.</div>`;
+    return;
+  }
+  el.innerHTML = PROFILES.map(
+    (p) => `
+    <div class="profile-row">
+      <div>
+        <b>${p.name}</b>
+        <span class="profile-url">${p.baseUrl}</span>
+        ${p.balanceText ? `<span class="profile-balance">${p.balanceText}</span>` : ""}
+      </div>
+      <button class="profile-remove-btn" data-id="${p.id}">Remove</button>
+    </div>
+  `
+  ).join("");
+
+  el.querySelectorAll(".profile-remove-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      PROFILES = PROFILES.filter((p) => p.id !== btn.dataset.id);
+      CATALOG = mergeAllProfileCatalogs();
+      PANEL.connected = PROFILES.length > 0;
+      saveProfiles();
+      renderProfilesList();
+      rebuildAllCategoryDropdowns();
+      renderFixedCards();
+      refreshAutoTab();
+      addLog(`Removed saved panel`);
+    });
+  });
 }
 
 function groupServicesByCategory(list) {
@@ -617,17 +698,25 @@ extraServicesToggleBtn.addEventListener("click", () => {
 
 // ==========================================
 // AUTO TAB — fixed 6-service toggle cards
+// Fully automatic: quantity/legs/duration/service-pool are all computed,
+// matching the reference panel's engagement-ratio formulas.
 // ==========================================
 const FIXED_SERVICES = [
   { key: "views", emoji: "👁", label: "Views", primary: true, defaultOn: true, defaultQty: 5000 },
-  { key: "likes", emoji: "❤️", label: "Like", defaultOn: true, defaultQty: 500 },
-  { key: "share", emoji: "📤", label: "Share", defaultQty: 100 },
-  { key: "save", emoji: "🔖", label: "Save", defaultQty: 100 },
-  { key: "comments", emoji: "💬", label: "Comments", defaultQty: 20 },
-  { key: "repost", emoji: "🔁", label: "Repost", defaultQty: 50 },
+  { key: "likes", emoji: "❤️", label: "Like", defaultOn: true },
+  { key: "share", emoji: "📤", label: "Share" },
+  { key: "save", emoji: "🔖", label: "Save" },
+  { key: "comments", emoji: "💬", label: "Comments" },
+  { key: "repost", emoji: "🔁", label: "Repost" },
 ];
 
-let GAP_MODE = "auto";
+const MIN_VIEWS_QTY_AUTO = 5000;
+const ENGAGEMENT_PERCENT = { likes: 0.047, share: 0.034, comments: 0.0023, repost: 0.0057, save: 0.012 };
+const VIEWS_LEGS_PER_1000 = 5;
+const DEFAULT_MIN_GAP_MIN = 8;
+const DEFAULT_MAX_GAP_MIN = 14;
+
+let GAP_MODE = "auto"; // 'auto' (8-14min randomized) or 'manual' (fixed, no jitter)
 
 const autoFixedCardsEl = document.getElementById("autoFixedCards");
 const gapAutoBtn = document.getElementById("gapAutoBtn");
@@ -637,34 +726,60 @@ const autoExtraLegsCount = document.getElementById("autoExtraLegsCount");
 const autoExtraLegsToggle = document.getElementById("autoExtraLegsToggle");
 const autoExtraLegsList = document.getElementById("autoExtraLegsList");
 
-const legOverrides = {};
+const legOverrides = {}; // { serviceKey: number|null } manual override from the Extra Services panel
+
+function calcEngagementLegs(qty, slotType) {
+  if (!qty || qty <= 0) return 1;
+  if (slotType === "comments") return Math.max(1, Math.round((qty / 10) * 7));
+  if (slotType === "repost") return Math.max(1, Math.round((qty / 100) * 15));
+  return Math.max(1, Math.round((qty / 100) * 7));
+}
+
+function autoCalcLegs(qty, minQ, slotType) {
+  const safeMin = minQ || 1;
+  const maxPossible = Math.max(1, Math.floor((qty || 0) / safeMin));
+  if (maxPossible <= 1) {
+    if (slotType === "repost" && (qty || 0) >= safeMin * 2) return 2;
+    return 1;
+  }
+  return Math.max(1, Math.min(calcEngagementLegs(qty, slotType), maxPossible));
+}
+
+function getActiveGapRange() {
+  return GAP_MODE === "manual"
+    ? { min: DEFAULT_MIN_GAP_MIN, max: DEFAULT_MIN_GAP_MIN }
+    : { min: DEFAULT_MIN_GAP_MIN, max: DEFAULT_MAX_GAP_MIN };
+}
+
+function getServicePool(key) {
+  // Real connected panel -> use its live fetched services for this category automatically.
+  if (PANEL.connected && CATALOG[key] && CATALOG[key].length > 0) {
+    return CATALOG[key];
+  }
+  // No panel connected -> fall back to whichever demo service the person picked manually.
+  const manualSelect = document.getElementById(`manualSvc-${key}`);
+  if (manualSelect && manualSelect.value) {
+    const chosen = (DEMO_CATALOG[key] || []).find((s) => String(s.id) === manualSelect.value);
+    if (chosen) return [chosen];
+  }
+  return DEMO_CATALOG[key] || [];
+}
 
 function renderFixedCards() {
   autoFixedCardsEl.innerHTML = FIXED_SERVICES.map((svc) => {
-    const pool = CATALOG[svc.key] || [];
-    const defaultIds = pool.map((s) => s.id).join(", ");
+    const showManualPicker = !PANEL.connected;
+    const demoOptions = (DEMO_CATALOG[svc.key] || [])
+      .map((s) => `<option value="${s.id}">${s.name}</option>`)
+      .join("");
 
-    const primaryFields = svc.primary
+    const manualPickerHtml = showManualPicker
       ? `
-        <div class="fixed-svc-row2">
-          <label class="field">
-            <span class="field-label">Number of Legs</span>
-            <input class="input auto-views-legs" type="number" min="1" max="250" value="10">
-          </label>
-          <label class="field">
-            <span class="field-label">Duration</span>
-            <div class="duration-combo">
-              <input class="input auto-views-duration-value" type="number" min="1" value="24">
-              <select class="input auto-views-duration-unit">
-                <option value="minutes">Min</option>
-                <option value="hours" selected>Hrs</option>
-                <option value="days">Days</option>
-              </select>
-            </div>
-          </label>
-        </div>
+        <label class="field">
+          <span class="field-label">Service (no panel connected — pick one)</span>
+          <select class="input full manual-svc-select" id="manualSvc-${svc.key}">${demoOptions}</select>
+        </label>
       `
-      : "";
+      : `<div class="auto-service-note" id="autoServiceNote-${svc.key}"></div>`;
 
     return `
       <div class="fixed-svc-card ${svc.defaultOn ? "" : "disabled"}" id="svcCard-${svc.key}" style="--tc:${colorForCategory(svc.key)}">
@@ -676,17 +791,11 @@ function renderFixedCards() {
           </label>
         </div>
         <div class="fixed-svc-body">
-          ${primaryFields}
-          <div class="fixed-svc-row2">
-            <label class="field">
-              <span class="field-label">Quantity</span>
-              <input class="input auto-qty" type="number" min="1" value="${svc.defaultQty}">
-            </label>
-            <label class="field">
-              <span class="field-label">Service IDs (round-robin)</span>
-              <input class="input svc-ids-input" type="text" value="${defaultIds}" placeholder="e.g. 3546, 3612">
-            </label>
-          </div>
+          <label class="field">
+            <span class="field-label">Quantity${svc.primary ? "" : " (auto-filled from Views — editable)"}</span>
+            <input class="input full auto-qty" type="number" min="1" value="${svc.defaultQty || ""}" placeholder="${svc.primary ? "" : "auto"}">
+          </label>
+          ${manualPickerHtml}
           <div class="min-warning-line" id="minWarn-${svc.key}"></div>
         </div>
       </div>
@@ -696,18 +805,25 @@ function renderFixedCards() {
   FIXED_SERVICES.forEach((svc) => {
     const card = document.getElementById(`svcCard-${svc.key}`);
     const toggle = card.querySelector(".svc-enable-toggle");
-    const inputs = card.querySelectorAll("input, select");
+    const qtyInput = card.querySelector(".auto-qty");
+    const manualSelect = card.querySelector(".manual-svc-select");
 
     toggle.addEventListener("change", () => {
       card.classList.toggle("disabled", !toggle.checked);
       refreshAutoTab();
     });
 
-    inputs.forEach((inp) => {
-      if (inp === toggle) return;
-      inp.addEventListener("input", () => refreshAutoTab());
-      inp.addEventListener("change", () => refreshAutoTab());
-    });
+    if (svc.primary) {
+      qtyInput.addEventListener("input", () => refreshAutoTab());
+    } else {
+      // manual edits to an auto-filled quantity stick until Views quantity changes again
+      qtyInput.addEventListener("input", () => {
+        qtyInput.dataset.userEdited = "1";
+        refreshAutoTab();
+      });
+    }
+
+    if (manualSelect) manualSelect.addEventListener("change", () => refreshAutoTab());
   });
 }
 
@@ -715,12 +831,14 @@ gapAutoBtn.addEventListener("click", () => {
   GAP_MODE = "auto";
   gapAutoBtn.classList.add("active");
   gapManualBtn.classList.remove("active");
+  Object.keys(legOverrides).forEach((k) => delete legOverrides[k]);
   refreshAutoTab();
 });
 gapManualBtn.addEventListener("click", () => {
   GAP_MODE = "manual";
   gapManualBtn.classList.add("active");
   gapAutoBtn.classList.remove("active");
+  Object.keys(legOverrides).forEach((k) => delete legOverrides[k]);
   refreshAutoTab();
 });
 
@@ -735,28 +853,13 @@ function getFixedServiceInputs(key) {
   return {
     card,
     enabled: card.querySelector(".svc-enable-toggle").checked,
+    qtyInput: card.querySelector(".auto-qty"),
     qty: Math.max(0, parseInt(card.querySelector(".auto-qty").value, 10) || 0),
-    idsRaw: card.querySelector(".svc-ids-input").value,
   };
 }
 
-function parsePoolIds(idsRaw, category) {
-  const typed = idsRaw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-  const catalogPool = CATALOG[category] || [];
-  const matched = typed.map((idStr) => {
-    const found = catalogPool.find((s) => String(s.id) === idStr);
-    return found || { id: idStr, rate: catalogPool[0] ? catalogPool[0].rate : 10, min: catalogPool[0] ? catalogPool[0].min : 1, max: catalogPool[0] ? catalogPool[0].max : 1000000 };
-  });
-
-  return matched.length > 0 ? matched : catalogPool;
-}
-
 function assignRoundRobin(pool, count) {
-  return Array.from({ length: count }, (_, i) => pool[i % pool.length].id);
+  return Array.from({ length: count }, (_, i) => pool[i % pool.length]);
 }
 
 function generateAutoLegs(quantity, legsCount, totalMinutes, gapMode, minQty) {
@@ -794,28 +897,36 @@ function generateAutoLegs(quantity, legsCount, totalMinutes, gapMode, minQty) {
 
 function refreshAutoTab() {
   const viewsState = getFixedServiceInputs("views");
-  const viewsCard = document.getElementById("svcCard-views");
-  const viewsPool = parsePoolIds(viewsState.idsRaw, "views");
-  const viewsMinQty = Math.max(...viewsPool.map((s) => s.min));
-  const viewsRate = viewsPool.reduce((a, s) => a + s.rate, 0) / viewsPool.length;
+  const viewsPool = getServicePool("views");
+  const viewsMinQty = Math.max(...viewsPool.map((s) => s.min), 1);
+
+  const viewsNoteEl = document.getElementById("autoServiceNote-views");
+  if (viewsNoteEl) {
+    viewsNoteEl.textContent =
+      viewsPool.length > 1
+        ? `🔀 Auto round-robin across ${viewsPool.length} connected services: ${viewsPool.map((s) => s.name).join(", ")}`
+        : viewsPool.length === 1
+        ? `Using: ${viewsPool[0].name}`
+        : "";
+  }
 
   document.getElementById("minWarn-views").textContent =
-    viewsState.qty > 0 && viewsState.qty < viewsMinQty ? `⚠️ Below minimum (${viewsMinQty.toLocaleString()}) for this service pool.` : "";
+    viewsState.qty > 0 && viewsState.qty < MIN_VIEWS_QTY_AUTO
+      ? `⚠️ Below the ${MIN_VIEWS_QTY_AUTO.toLocaleString()} minimum — it'll be rounded up to ${MIN_VIEWS_QTY_AUTO.toLocaleString()} when the order is created.`
+      : "";
 
   let viewsLegs = [];
+  let totalMinutes = 0;
+  const gapRange = getActiveGapRange();
+
   if (viewsState.enabled && viewsState.qty > 0) {
-    const legsCountInput = viewsCard.querySelector(".auto-views-legs");
-    const durationValueInput = viewsCard.querySelector(".auto-views-duration-value");
-    const durationUnitInput = viewsCard.querySelector(".auto-views-duration-unit");
+    const effectiveQty = Math.max(viewsState.qty, MIN_VIEWS_QTY_AUTO);
+    const legsCount = Math.max(1, Math.min(250, Math.round((effectiveQty / 1000) * VIEWS_LEGS_PER_1000)));
+    totalMinutes = Math.ceil(gapRange.min * legsCount * 1.3);
 
-    const legsCount = Math.max(1, parseInt(legsCountInput.value, 10) || 1);
-    const durationVal = Math.max(1, parseFloat(durationValueInput.value) || 1);
-    const unitMultiplier = durationUnitInput.value === "minutes" ? 1 : durationUnitInput.value === "days" ? 1440 : 60;
-    const totalMinutes = durationVal * unitMultiplier;
-
-    viewsLegs = generateAutoLegs(viewsState.qty, legsCount, totalMinutes, GAP_MODE, viewsMinQty);
-    const serviceIds = assignRoundRobin(viewsPool, viewsLegs.length);
-    viewsLegs = viewsLegs.map((l, i) => ({ ...l, serviceLabel: "Views", category: "views", serviceId: serviceIds[i] }));
+    viewsLegs = generateAutoLegs(effectiveQty, legsCount, totalMinutes, GAP_MODE, viewsMinQty);
+    const assigned = assignRoundRobin(viewsPool, viewsLegs.length);
+    viewsLegs = viewsLegs.map((l, i) => ({ ...l, serviceLabel: "Views", category: "views", serviceId: assigned[i].id, baseUrl: assigned[i]._baseUrl, apiKey: assigned[i]._apiKey }));
   }
 
   let allLegs = [...viewsLegs];
@@ -823,33 +934,57 @@ function refreshAutoTab() {
 
   FIXED_SERVICES.filter((s) => !s.primary).forEach((svc) => {
     const state = getFixedServiceInputs(svc.key);
-    const pool = parsePoolIds(state.idsRaw, svc.key);
-    const minQty = Math.max(...pool.map((s) => s.min));
+    const pool = getServicePool(svc.key);
+    const minQty = Math.max(...pool.map((s) => s.min), 1);
+
+    const noteEl = document.getElementById(`autoServiceNote-${svc.key}`);
+    if (noteEl) {
+      noteEl.textContent =
+        pool.length > 1
+          ? `🔀 Auto round-robin across ${pool.length} connected services`
+          : pool.length === 1
+          ? `Using: ${pool[0].name}`
+          : "";
+    }
+
+    // Auto-fill this service's quantity from the Views quantity, with a
+    // little randomness so re-entering the same Views number doesn't
+    // always produce the exact same numbers here.
+    if (!state.qtyInput.dataset.userEdited && viewsState.qty > 0) {
+      const basePct = ENGAGEMENT_PERCENT[svc.key] || 0.01;
+      const baseQty = Math.round(viewsState.qty * basePct);
+      const randomizedQty = Math.max(1, Math.round(jitter(baseQty, 20)));
+      state.qtyInput.value = randomizedQty;
+      state.qty = randomizedQty;
+    }
 
     document.getElementById(`minWarn-${svc.key}`).textContent =
-      state.qty > 0 && state.qty < minQty ? `⚠️ Below minimum (${minQty.toLocaleString()}) for this service pool.` : "";
+      state.qty > 0 && state.qty < minQty ? `⚠️ Below minimum (${minQty.toLocaleString()}) for this service.` : "";
 
     if (!state.enabled || state.qty <= 0 || viewsLegs.length === 0) return;
 
-    const result = generateSyncedLegsWithReduction(state.qty, minQty, viewsLegs);
+    let legsCount = autoCalcLegs(state.qty, minQty, svc.key);
+    const override = legOverrides[svc.key];
+    if (override) legsCount = Math.min(override, legsCount);
+
+    const result = generateSyncedLegsWithReduction(
+      state.qty,
+      minQty,
+      viewsLegs.length > legsCount
+        ? viewsLegs.filter((_, i) => i % Math.ceil(viewsLegs.length / legsCount) === 0).slice(0, legsCount)
+        : viewsLegs
+    );
     let legs = result.legs;
 
-    const override = legOverrides[svc.key];
-    if (override && override < legs.length) {
-      const step = legs.length / override;
-      const subsampled = [];
-      for (let i = 0; i < override; i++) subsampled.push(legs[Math.min(legs.length - 1, Math.round(i * step))]);
-      const sync2 = generateSyncedLegsWithReduction(state.qty, minQty, subsampled);
-      legs = sync2.legs;
-    }
-
-    const serviceIds = assignRoundRobin(pool, legs.length);
-    legs = legs.map((l, i) => ({ ...l, serviceLabel: capitalize(svc.key), category: svc.key, serviceId: serviceIds[i] }));
+    const assigned2 = assignRoundRobin(pool, legs.length);
+    legs = legs.map((l, i) => ({ ...l, serviceLabel: capitalize(svc.key), category: svc.key, serviceId: assigned2[i].id, baseUrl: assigned2[i]._baseUrl, apiKey: assigned2[i]._apiKey }));
     allLegs = allLegs.concat(legs);
 
-    if (result.reduced || (override && override !== result.legs.length)) {
-      const maxAllowed = Math.floor(state.qty / minQty) || 1;
-      extraOverrideRows.push({ key: svc.key, label: svc.label || capitalize(svc.key), emoji: svc.emoji, max: maxAllowed, current: legs.length });
+    const naturalMax = Math.max(1, Math.floor(state.qty / minQty));
+    if (naturalMax < viewsLegs.length) {
+      extraOverrideRows.push({ key: svc.key, label: svc.label, emoji: svc.emoji, max: naturalMax, current: legs.length });
+    } else {
+      delete legOverrides[svc.key];
     }
   });
 
@@ -877,8 +1012,10 @@ function refreshAutoTab() {
       });
     });
   } else {
+    Object.keys(legOverrides).forEach((k) => delete legOverrides[k]);
     autoExtraLegsHead.style.display = "none";
     autoExtraLegsList.style.display = "none";
+    autoExtraLegsList.innerHTML = "";
   }
 
   window._autoTabLegs = allLegs;
@@ -887,7 +1024,7 @@ function refreshAutoTab() {
   let totalCost = 0;
   allLegs.forEach((l) => {
     totalQty += l.amount;
-    const pool = CATALOG[l.category] || [];
+    const pool = CATALOG[l.category] || DEMO_CATALOG[l.category] || [];
     const rate = pool.length ? pool.reduce((a, s) => a + s.rate, 0) / pool.length : 10;
     totalCost += (l.amount / 1000) * rate;
   });
@@ -906,6 +1043,8 @@ function computeAutoTabLegs(link) {
     quantity: l.amount,
     category: l.category,
     serviceLabel: l.serviceLabel,
+    baseUrl: l.baseUrl,
+    apiKey: l.apiKey,
     fireInMs: l.minutesAt * 60000,
   }));
 }
@@ -1791,12 +1930,10 @@ manualModeBtn.addEventListener("click", () => setOrderMode("manual"));
 pruneOldHistory();
 addLog("Session started");
 
-const savedCreds = loadCredentials();
-if (savedCreds && savedCreds.baseUrl) {
-  apiBaseUrlInput.value = savedCreds.baseUrl;
-  apiKeyInputEl.value = savedCreds.apiKey || "";
-  attemptConnect(savedCreds.baseUrl, savedCreds.apiKey, true);
-}
+const savedProfiles = loadProfilesFromStorage();
+savedProfiles.forEach((p) => {
+  attemptConnect(p.name, p.baseUrl, p.apiKey, true);
+});
 
 // ==========================================
 // GROWTH GRAPH — hover tooltip
