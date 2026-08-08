@@ -969,6 +969,25 @@ input[type="range"].randomness::-moz-range-thumb{
   min-height: 1em;
 }
 
+.auto-service-note{
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.profiles-list{ display:flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
+.profile-row{
+  display:flex; align-items:center; justify-content: space-between;
+  background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 10px; padding: 10px 14px; font-size: 0.84rem;
+}
+.profile-url{ display:block; color: var(--muted); font-size: 0.74rem; font-family: var(--font-mono); }
+.profile-balance{ color: var(--green); font-size: 0.76rem; margin-left: 8px; }
+.profile-remove-btn{
+  background: var(--red-soft); border: 1px solid var(--red-deep); color: var(--red);
+  border-radius: 7px; padding: 5px 12px; font-size: 0.76rem; cursor:pointer;
+}
+
 /* gap mode buttons */
 .gap-mode-row{ display:flex; gap: 8px; flex-wrap: wrap; }
 .gap-mode-btn{
