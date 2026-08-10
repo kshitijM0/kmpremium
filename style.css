@@ -1088,3 +1088,4 @@ input[type="range"].randomness::-moz-range-thumb{
   .slot-row{ grid-template-columns: 1fr; }
   .graph-select-row{ flex-direction: column; }
 }
+ 
