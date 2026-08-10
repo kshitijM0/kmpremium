@@ -20,12 +20,12 @@ async function verifyLinkvertiseHash(hash) {
 module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed." });
 
-  const { freeKey } = getLimiters();
-  const { success } = await freeKey.limit(getClientIp(req));
-  if (!success) {
-    return res.status(429).json({ error: "You've already claimed a free key today." });
-  }
-
+  // TEMP: disabled for testing — re-enable before going live!
+  // const { freeKey } = getLimiters();
+  // const { success } = await freeKey.limit(getClientIp(req));
+  // if (!success) {
+  //   return res.status(429).json({ error: "You've already claimed a free key today." });
+  // }
   const hash = req.body && req.body.hash;
   if (!hash || typeof hash !== "string") {
     return res.status(400).json({ error: "Invalid request." });
