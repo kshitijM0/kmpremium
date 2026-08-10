@@ -1,6 +1,5 @@
 (function () {
   var LINKVERTISE_URL = "https://link-hub.net/8236285/ApjF6y0XD5CV";
-  var STORAGE_KEY = "km_access_key";
 
   function checkKey(key, onResult) {
     fetch("/api/validate-key", {
@@ -45,13 +44,11 @@
         btn.disabled = false;
         btn.textContent = "Unlock";
         if (valid) {
-          localStorage.setItem(STORAGE_KEY, key);
           overlay.remove();
           if (shell) shell.classList.remove("gate-hidden-content");
         } else {
           err.textContent = "Key is invalid or expired. Try again or get a free key below.";
           err.style.display = "block";
-          localStorage.removeItem(STORAGE_KEY);
         }
       });
     }
@@ -63,16 +60,6 @@
   }
 
   document.addEventListener("DOMContentLoaded", function () {
-    var stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) {
-      showOverlay();
-      return;
-    }
-    checkKey(stored, function (valid) {
-      if (!valid) {
-        localStorage.removeItem(STORAGE_KEY);
-        showOverlay();
-      }
-    });
+    showOverlay();
   });
 })();
