@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KM Panel — Admin</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: #0a0a0a; color: #f2f2f2;
+    font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .box { background: #151515; border: 1px solid #262626; border-radius: 14px; padding: 24px; width: 100%; max-width: 420px; }
+  h1 { font-size: 1.15rem; margin: 0 0 16px; }
+  input, select { width: 100%; background: #1e1e1e; border: 1px solid #333; color: #f2f2f2; border-radius: 8px; padding: 10px 12px; font-size: 0.9rem; margin-bottom: 10px; }
+  button { width: 100%; background: #f2f2f2; color: #0a0a0a; border: none; border-radius: 8px; padding: 10px 12px; font-weight: 600; font-size: 0.9rem; cursor: pointer; }
+  button.secondary { background: transparent; color: #34d399; border: 1px solid #34d399; }
+  button.danger { background: transparent; color: #f87171; border: 1px solid #f87171; }
+  .error { color: #f87171; font-size: 0.85rem; margin: -4px 0 10px; }
+  .panel-wide { max-width: 760px; width: 100%; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #262626; }
+  th { color: #999; font-weight: 500; }
+  .mono { font-family: monospace; }
+  .row { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .row select { width: auto; margin-bottom: 0; }
+  .row button { width: auto; padding: 10px 16px; }
+  .actions button { width: auto; padding: 4px 8px; font-size: 0.78rem; margin-right: 6px; }
+  .empty { text-align: center; color: #777; padding: 20px; }
+</style>
+</head>
+<body>
+
+<div id="loginBox" class="box">
+  <h1>Admin login</h1>
+  <input id="passwordInput" type="password" placeholder="Password">
+  <div id="loginError" class="error" style="display:none;"></div>
+  <button id="loginBtn">Log in</button>
+</div>
+
+<div id="adminBox" class="box panel-wide" style="display:none;">
+  <h1>Key admin</h1>
+  <div class="row">
+    <select id="durationSelect">
+      <option value="60">1 hour</option>
+      <option value="1440" selected>24 hours</option>
+      <option value="2880">48 hours</option>
+      <option value="10080">7 days</option>
+      <option value="43200">30 days</option>
+    </select>
+    <button id="generateBtn" class="secondary">Generate key</button>
+  </div>
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Status</th><th>Source</th><th>Expires</th><th>Actions</th></tr>
+    </thead>
+    <tbody id="keysTableBody"></tbody>
+  </table>
+</div>
+
+<script>
+  const loginBox = document.getElementById('loginBox');
+  const adminBox = document.getElementById('adminBox');
+  const loginError = document.getElementById('loginError');
+
+  async function loadKeys() {
+    const res = await fetch('/api/admin/list-keys');
+    if (!res.ok) return false;
+    const data = await res.json();
+    renderKeys(data.keys || []);
+    loginBox.style.display = 'none';
+    adminBox.style.display = 'block';
+    return true;
+  }
+
+  function renderKeys(keys) {
+    const body = document.getElementById('keysTableBody');
+    if (!keys.length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty">No keys yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = keys.map(k => `
+      <tr>
+        <td class="mono">${k.key_value}</td>
+        <td>${k.status}</td>
+        <td>${k.source}</td>
+        <td>${new Date(k.expires_at).toLocaleString()}</td>
+        <td class="actions">
+          <button class="secondary" data-action="reload" data-id="${k.id}" ${k.status !== 'active' ? 'disabled' : ''}>Reload</button>
+          <button class="danger" data-action="revoke" data-id="${k.id}" ${k.status !== 'active' ? 'disabled' : ''}>Revoke</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  document.getElementById('loginBtn').addEventListener('click', async () => {
+    loginError.style.display = 'none';
+    const password = document.getElementById('passwordInput').value;
+    const res = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    });
+    if (res.ok) {
+      await loadKeys();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      loginError.textContent = data.error || 'Login failed.';
+      loginError.style.display = 'block';
+    }
+  });
+
+  document.getElementById('generateBtn').addEventListener('click', async () => {
+    const durationMinutes = Number(document.getElementById('durationSelect').value);
+    await fetch('/api/admin/generate-key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ durationMinutes })
+    });
+    await loadKeys();
+  });
+
+  document.getElementById('keysTableBody').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    const action = btn.dataset.action;
+    const endpoint = action === 'reload' ? '/api/admin/reload-key' : '/api/admin/revoke-key';
+    await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    });
+    await loadKeys();
+  });
+
+  // If already logged in (valid cookie), skip straight to panel.
+  loadKeys();
+</script>
+</body>
+</html>
