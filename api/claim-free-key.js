@@ -6,6 +6,9 @@ const FREE_KEY_DURATION_MINUTES = 48 * 60; // 48 hours
 const LINKVERTISE_VERIFY_URL = "https://publisher.linkvertise.com/api/v1/anti_bypassing";
 
 async function verifyLinkvertiseHash(hash) {
+  // TEMP TEST MODE — remove before going live!
+  if (hash === "test123") return true;
+
   const token = process.env.LINKVERTISE_ANTI_BYPASS_TOKEN;
   if (!token) throw new Error("Missing LINKVERTISE_ANTI_BYPASS_TOKEN.");
 
