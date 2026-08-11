@@ -11,9 +11,11 @@ async function verifyLinkvertiseHash(hash) {
 
   const url = `${LINKVERTISE_VERIFY_URL}?token=${encodeURIComponent(token)}&hash=${encodeURIComponent(hash)}`;
   const r = await fetch(url, { method: "POST" });
+  const rawText = await r.text();
+  console.log("LINKVERTISE_RAW_RESPONSE:", r.status, rawText);
   if (!r.ok) return false;
 
-  const text = (await r.text()).trim().toUpperCase();
+  const text = rawText.trim().toUpperCase();
   return text === "TRUE" || text === '"TRUE"';
 }
 
