@@ -39,7 +39,7 @@ module.exports = async (req, res) => {
   }
 
   if (!verified) {
-    return res.status(403).json({ error: "Ad completion could not be verified. Please try again." });
+    return res.status(403).json({ error: "Ad completion could not be verified. Please try again.", debug: verified });
   }
 
   const keyValue = generateKeyValue();
