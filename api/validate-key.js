@@ -11,16 +11,37 @@ module.exports = async (req, res) => {
   }
 
   const key = req.body && req.body.key;
+  const deviceId = req.body && req.body.deviceId;
+
   if (!key || typeof key !== "string" || key.length < 5 || key.length > 100) {
     return res.status(400).json({ valid: false, error: "Invalid request." });
   }
+  if (!deviceId || typeof deviceId !== "string" || deviceId.length < 5 || deviceId.length > 200) {
+    return res.status(400).json({ valid: false, error: "Invalid request." });
+  }
 
-  const { data } = await getSupabaseAdmin()
+  const supabase = getSupabaseAdmin();
+  const { data } = await supabase
     .from("keys")
-    .select("status, expires_at")
+    .select("id, status, expires_at, device_id")
     .eq("key_value", key)
     .maybeSingle();
 
-  const isValid = !!data && data.status === "active" && new Date(data.expires_at) > new Date();
-  return res.status(200).json({ valid: isValid });
+  const activeAndNotExpired =
+    !!data && data.status === "active" && new Date(data.expires_at) > new Date();
+
+  if (!activeAndNotExpired) {
+    return res.status(200).json({ valid: false });
+  }
+
+  if (!data.device_id) {
+    await supabase.from("keys").update({ device_id: deviceId }).eq("id", data.id);
+    return res.status(200).json({ valid: true });
+  }
+
+  if (data.device_id !== deviceId) {
+    return res.status(200).json({ valid: false, error: "This key is already in use on another device." });
+  }
+
+  return res.status(200).json({ valid: true });
 };
