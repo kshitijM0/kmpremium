@@ -30,6 +30,7 @@
   .actions button { width: auto; padding: 4px 8px; font-size: 0.78rem; margin-right: 6px; }
   .empty { text-align: center; color: #777; padding: 20px; }
   .table-wrap { overflow-x: auto; }
+  .muted { color: #666; }
 </style>
 </head>
 <body>
@@ -56,7 +57,7 @@
   <div class="table-wrap">
   <table>
     <thead>
-      <tr><th>Key</th><th>Status</th><th>Source</th><th>Wallet</th><th>Expires</th><th>Actions</th></tr>
+      <tr><th>Key</th><th>Status</th><th>Source</th><th>Wallet (device)</th><th>Expires</th><th>Actions</th></tr>
     </thead>
     <tbody id="keysTableBody"></tbody>
   </table>
@@ -89,12 +90,12 @@
         <td class="mono">${k.key_value}</td>
         <td>${k.status}</td>
         <td>${k.source}</td>
-        <td class="mono">₹${Number(k.wallet_balance || 0).toFixed(2)}</td>
+        <td class="mono">${k.wallet_balance === null ? '<span class="muted">no device yet</span>' : '₹' + Number(k.wallet_balance).toFixed(2)}</td>
         <td>${new Date(k.expires_at).toLocaleString()}</td>
         <td class="actions">
           <button class="secondary" data-action="reload" data-id="${k.id}" ${k.status !== 'active' ? 'disabled' : ''}>Reload</button>
           <button class="danger" data-action="revoke" data-id="${k.id}" ${k.status !== 'active' ? 'disabled' : ''}>Revoke</button>
-          <button class="walletbtn" data-action="wallet" data-id="${k.id}" data-key="${k.key_value}">Adjust ₹</button>
+          <button class="walletbtn" data-action="wallet" data-id="${k.id}" data-key="${k.key_value}" ${!k.device_id ? 'disabled title="No device linked yet"' : ''}>Adjust ₹</button>
         </td>
       </tr>
     `).join('');
@@ -134,7 +135,7 @@
     const action = btn.dataset.action;
 
     if (action === 'wallet') {
-      const amountStr = prompt(`Adjust wallet for ${btn.dataset.key}\n\nEnter amount (use negative to deduct, e.g. -50):`);
+      const amountStr = prompt(`Adjust wallet for the device linked to ${btn.dataset.key}\n\nEnter amount (use negative to deduct, e.g. -50):`);
       if (amountStr === null) return;
       const amount = Number(amountStr);
       if (!Number.isFinite(amount) || amount === 0) { alert('Invalid amount.'); return; }
@@ -158,7 +159,6 @@
     await loadKeys();
   });
 
-  // If already logged in (valid cookie), skip straight to panel.
   loadKeys();
 </script>
 </body>

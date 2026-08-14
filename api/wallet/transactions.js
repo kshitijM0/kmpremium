@@ -4,13 +4,13 @@ const { readSession } = require("../../lib/keySession");
 module.exports = async (req, res) => {
   if (req.method !== "GET") return res.status(405).json({ success: false, error: "Method not allowed." });
 
-  const keyId = readSession(req);
-  if (!keyId) return res.status(401).json({ success: false, error: "No active session." });
+  const session = readSession(req);
+  if (!session) return res.status(401).json({ success: false, error: "No active session." });
 
   const { data, error } = await getSupabaseAdmin()
     .from("wallet_transactions")
-    .select("id, type, amount, balance_after, description, created_at")
-    .eq("key_id", keyId)
+    .select("id, type, amount, balance_after, description, status, created_at")
+    .eq("device_id", session.deviceId)
     .order("created_at", { ascending: false })
     .limit(100);
 

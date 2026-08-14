@@ -36,19 +36,21 @@ module.exports = async (req, res) => {
     return res.status(200).json({ valid: false });
   }
 
-  // First-ever use of this key: bind it to this device.
   if (!data.device_id) {
     await supabase.from("keys").update({ device_id: deviceId }).eq("id", data.id);
   } else if (data.device_id !== deviceId) {
     return res.status(200).json({ valid: false, error: "This key is already in use on another device." });
   }
 
-  // Issue a signed customer session cookie (carries only the internal key
-  // id, never the raw key) so wallet/orders/profile endpoints don't need
-  // the raw key resent on every request.
+  // Ensure the device's wallet row exists (no-op if it already does) —
+  // wallet_balance stays whatever it already was for this device.
+  await supabase
+    .from("devices")
+    .upsert({ device_id: deviceId }, { onConflict: "device_id", ignoreDuplicates: true });
+
   res.setHeader(
     "Set-Cookie",
-    serializeCookie(SESSION_COOKIE, createSessionValue(data.id), {
+    serializeCookie(SESSION_COOKIE, createSessionValue(data.id, deviceId), {
       httpOnly: true,
       secure: true,
       sameSite: "Strict",
