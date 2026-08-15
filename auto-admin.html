@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KM Panel — Auto Order Providers</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: #0a0a0a; color: #f2f2f2; font-family: -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; }
+  .center-box { max-width: 420px; margin: 80px auto; background: #151515; border: 1px solid #262626; border-radius: 14px; padding: 24px; }
+  h1 { font-size: 1.2rem; margin: 0 0 16px; }
+  h2 { font-size: 1rem; margin: 28px 0 12px; color: #ddd; }
+  input, select { background: #1e1e1e; border: 1px solid #333; color: #f2f2f2; border-radius: 8px; padding: 8px 10px; font-size: 0.85rem; }
+  input.wide, select.wide { width: 100%; margin-bottom: 8px; }
+  button { background: #f2f2f2; color: #0a0a0a; border: none; border-radius: 8px; padding: 8px 14px; font-weight: 600; font-size: 0.82rem; cursor: pointer; }
+  button.secondary { background: transparent; color: #34d399; border: 1px solid #34d399; }
+  button.danger { background: transparent; color: #f87171; border: 1px solid #f87171; }
+  button.ghost { background: transparent; color: #999; border: 1px solid #444; padding: 4px 8px; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .error { color: #f87171; font-size: 0.82rem; }
+  .panel { max-width: 1100px; margin: 0 auto; }
+  .card { background: #151515; border: 1px solid #262626; border-radius: 14px; padding: 18px; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+  th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid #262626; white-space: nowrap; }
+  th { color: #999; font-weight: 500; }
+  .mono { font-family: monospace; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .badge { padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; }
+  .badge.online { background: #052e1c; color: #34d399; }
+  .badge.offline, .badge.invalid_key { background: #2e0505; color: #f87171; }
+  .badge.unknown, .badge.rate_limited { background: #2e2405; color: #fbbf24; }
+  .badge.active { background: #052e1c; color: #34d399; }
+  .badge.disabled { background: #262626; color: #999; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tabs button { background: #1e1e1e; color: #ccc; border: 1px solid #333; }
+  .tabs button.active { background: #f2f2f2; color: #0a0a0a; }
+  .empty { text-align: center; color: #777; padding: 16px; }
+  .table-wrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<div id="loginBox" class="center-box">
+  <h1>Admin login</h1>
+  <input id="passwordInput" class="wide" type="password" placeholder="Password">
+  <div id="loginError" class="error" style="display:none; margin-bottom:8px;"></div>
+  <button id="loginBtn" style="width:100%;">Log in</button>
+</div>
+
+<div id="mainPanel" class="panel" style="display:none;">
+  <h1>Auto Order — Master Provider Manager</h1>
+
+  <!-- PROVIDERS -->
+  <div class="card">
+    <h2>Master Providers</h2>
+    <div class="row">
+      <input id="newProviderName" placeholder="Provider name">
+      <input id="newProviderUrl" placeholder="API URL (https://...)" style="min-width:220px;">
+      <input id="newProviderKey" placeholder="API key" type="password">
+      <button id="addProviderBtn" class="secondary">Add Provider</button>
+    </div>
+    <div id="providerFormError" class="error" style="display:none;"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Name</th><th>URL</th><th>Status</th><th>Last Test</th><th>Balance</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="providersBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- SERVICE MAPPING -->
+  <div class="card">
+    <h2>Service Mapping (Auto Order pools)</h2>
+    <div class="tabs" id="typeTabs"></div>
+
+    <div class="row">
+      <select id="mapProviderSelect" style="min-width:160px;"></select>
+      <select id="mapServiceSelect" style="min-width:260px;"></select>
+      <input id="mapCustomerRate" placeholder="Customer rate / 1000" style="width:150px;">
+      <button id="addMappingBtn" class="secondary">Add to pool</button>
+    </div>
+    <div id="mappingFormError" class="error" style="display:none;"></div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>#</th><th>Provider</th><th>Service ID</th><th>Customer Rate</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="mappingBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  const loginBox = document.getElementById('loginBox');
+  const mainPanel = document.getElementById('mainPanel');
+  const SERVICE_TYPES = ['views','likes','shares','saves','reposts','comments'];
+  let currentType = 'views';
+  let providersCache = [];
+
+  async function boot() {
+    const res = await fetch('/api/auto/providers-list');
+    if (res.ok) {
+      loginBox.style.display = 'none';
+      mainPanel.style.display = 'block';
+      await loadProviders();
+      renderTypeTabs();
+      await loadMapping();
+    }
+  }
+
+  document.getElementById('loginBtn').addEventListener('click', async () => {
+    const password = document.getElementById('passwordInput').value;
+    const res = await fetch('/api/admin/login', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ password })
+    });
+    if (res.ok) { await boot(); }
+    else {
+      const data = await res.json().catch(() => ({}));
+      const el = document.getElementById('loginError');
+      el.textContent = data.error || 'Login failed.';
+      el.style.display = 'block';
+    }
+  });
+
+  // ---------- PROVIDERS ----------
+  async function loadProviders() {
+    const res = await fetch('/api/auto/providers-list');
+    const data = await res.json();
+    providersCache = data.providers || [];
+    renderProviders();
+    renderMapProviderSelect();
+  }
+
+  function renderProviders() {
+    const body = document.getElementById('providersBody');
+    if (!providersCache.length) {
+      body.innerHTML = '<tr><td colspan="6" class="empty">No providers yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = providersCache.map(p => `
+      <tr>
+        <td>${p.provider_name}</td>
+        <td class="mono">${p.api_url}</td>
+        <td><span class="badge ${p.status}">${p.status}</span></td>
+        <td>${p.last_test_status ? `<span class="badge ${p.last_test_status}">${p.last_test_status}</span>` : '—'}</td>
+        <td>${p.last_test_balance ?? '—'} ${p.last_test_currency ?? ''}</td>
+        <td>
+          <button class="ghost" data-action="test" data-id="${p.id}">Test</button>
+          <button class="ghost" data-action="fetch" data-id="${p.id}">Fetch Services</button>
+          <button class="ghost" data-action="toggle" data-id="${p.id}" data-status="${p.status}">${p.status === 'active' ? 'Disable' : 'Enable'}</button>
+          <button class="ghost" data-action="duplicate" data-id="${p.id}">Duplicate</button>
+          <button class="ghost danger" data-action="delete" data-id="${p.id}">Delete</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  document.getElementById('addProviderBtn').addEventListener('click', async () => {
+    const providerName = document.getElementById('newProviderName').value.trim();
+    const apiUrl = document.getElementById('newProviderUrl').value.trim();
+    const apiKey = document.getElementById('newProviderKey').value.trim();
+    const errEl = document.getElementById('providerFormError');
+    errEl.style.display = 'none';
+
+    const res = await fetch('/api/auto/providers-create', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ providerName, apiUrl, apiKey })
+    });
+    const data = await res.json();
+    if (!data.success) { errEl.textContent = data.error; errEl.style.display = 'block'; return; }
+    document.getElementById('newProviderName').value = '';
+    document.getElementById('newProviderUrl').value = '';
+    document.getElementById('newProviderKey').value = '';
+    await loadProviders();
+  });
+
+  document.getElementById('providersBody').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    const action = btn.dataset.action;
+
+    if (action === 'test') {
+      btn.textContent = 'Testing...'; btn.disabled = true;
+      const res = await fetch('/api/auto/providers-test', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+      const data = await res.json();
+      if (!data.success) alert('Test failed: ' + (data.error || data.status));
+      await loadProviders();
+    } else if (action === 'fetch') {
+      btn.textContent = 'Fetching...'; btn.disabled = true;
+      const res = await fetch('/api/auto/providers-fetch-services', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+      const data = await res.json();
+      if (!data.success) alert('Fetch failed: ' + data.error);
+      else alert(`Fetched ${data.fetched}, saved ${data.saved}, deactivated ${data.deactivated}.`);
+      await loadProviders();
+      renderMapServiceSelect();
+    } else if (action === 'toggle') {
+      const newStatus = btn.dataset.status === 'active' ? 'disabled' : 'active';
+      await fetch('/api/auto/providers-update', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id, status: newStatus }) });
+      await loadProviders();
+    } else if (action === 'duplicate') {
+      await fetch('/api/auto/providers-duplicate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+      await loadProviders();
+    } else if (action === 'delete') {
+      if (!confirm('Delete this provider and all its mappings?')) return;
+      await fetch('/api/auto/providers-delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+      await loadProviders();
+      await loadMapping();
+    }
+  });
+
+  // ---------- MAPPING ----------
+  function renderTypeTabs() {
+    const wrap = document.getElementById('typeTabs');
+    wrap.innerHTML = SERVICE_TYPES.map(t => `<button data-type="${t}" class="${t === currentType ? 'active' : ''}">${t}</button>`).join('');
+    wrap.querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', async () => {
+        currentType = b.dataset.type;
+        renderTypeTabs();
+        await loadMapping();
+      });
+    });
+  }
+
+  function renderMapProviderSelect() {
+    const sel = document.getElementById('mapProviderSelect');
+    sel.innerHTML = providersCache.filter(p => p.status === 'active').map(p => `<option value="${p.id}">${p.provider_name}</option>`).join('');
+    renderMapServiceSelect();
+  }
+
+  async function renderMapServiceSelect() {
+    const providerId = document.getElementById('mapProviderSelect').value;
+    const sel = document.getElementById('mapServiceSelect');
+    if (!providerId) { sel.innerHTML = ''; return; }
+    const res = await fetch('/api/auto/services-list?providerId=' + encodeURIComponent(providerId));
+    const data = await res.json();
+    const services = data.services || [];
+    sel.innerHTML = services.map(s => `<option value="${s.service_id}">${s.service_id} — ${s.service_name || ''} (rate ${s.rate ?? '?'})</option>`).join('');
+  }
+  document.getElementById('mapProviderSelect').addEventListener('change', renderMapServiceSelect);
+
+  document.getElementById('addMappingBtn').addEventListener('click', async () => {
+    const providerId = document.getElementById('mapProviderSelect').value;
+    const providerServiceId = document.getElementById('mapServiceSelect').value;
+    const customerRate = document.getElementById('mapCustomerRate').value;
+    const errEl = document.getElementById('mappingFormError');
+    errEl.style.display = 'none';
+
+    if (!providerId || !providerServiceId) { errEl.textContent = 'Pick a provider and a service.'; errEl.style.display = 'block'; return; }
+
+    const res = await fetch('/api/auto/mapping-save', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ serviceType: currentType, providerId, providerServiceId, customerRate: customerRate ? Number(customerRate) : null })
+    });
+    const data = await res.json();
+    if (!data.success) { errEl.textContent = data.error; errEl.style.display = 'block'; return; }
+    document.getElementById('mapCustomerRate').value = '';
+    await loadMapping();
+  });
+
+  async function loadMapping() {
+    const res = await fetch('/api/auto/mapping-list?serviceType=' + currentType);
+    const data = await res.json();
+    renderMapping(data.mapping || []);
+  }
+
+  function renderMapping(list) {
+    const body = document.getElementById('mappingBody');
+    if (!list.length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty">No services mapped for this type yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = list.map((m, i) => `
+      <tr data-id="${m.id}">
+        <td>${i + 1}</td>
+        <td>${m.api_providers ? m.api_providers.provider_name : m.provider_id}</td>
+        <td class="mono">${m.provider_service_id}</td>
+        <td>${m.customer_rate ?? '—'}</td>
+        <td>
+          <button class="ghost" data-action="up" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button class="ghost" data-action="down" ${i === list.length - 1 ? 'disabled' : ''}>↓</button>
+          <button class="ghost danger" data-action="remove">Remove</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  document.getElementById('mappingBody').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const tr = btn.closest('tr');
+    const id = tr.dataset.id;
+    const action = btn.dataset.action;
+
+    if (action === 'remove') {
+      if (!confirm('Remove this mapping?')) return;
+      await fetch('/api/auto/mapping-delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+      await loadMapping();
+      return;
+    }
+
+    const rows = Array.from(document.querySelectorAll('#mappingBody tr'));
+    const ids = rows.map(r => r.dataset.id);
+    const idx = ids.indexOf(id);
+    const swapWith = action === 'up' ? idx - 1 : idx + 1;
+    if (swapWith < 0 || swapWith >= ids.length) return;
+    [ids[idx], ids[swapWith]] = [ids[swapWith], ids[idx]];
+
+    await fetch('/api/auto/mapping-reorder', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ orderedIds: ids }) });
+    await loadMapping();
+  });
+
+  boot();
+</script>
+</body>
+</html>
