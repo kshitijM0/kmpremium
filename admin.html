@@ -139,11 +139,17 @@
       if (amountStr === null) return;
       const amount = Number(amountStr);
       if (!Number.isFinite(amount) || amount === 0) { alert('Invalid amount.'); return; }
-      const res = await fetch('/api/admin/wallet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'adjust', keyId: id, amount, description: 'Manual admin adjustment' })
-      });
+      const res = await fetch('/api/admin/auth', {
+  method: 'POST',
+  credentials: 'include',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    action: 'login',
+    password
+  })
+});
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { alert(data.error || 'Failed to adjust balance.'); return; }
       await loadKeys();
