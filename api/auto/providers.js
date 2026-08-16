@@ -137,6 +137,9 @@ module.exports = async (req, res) => {
     }
 
     const result = await callProviderApi(provider.api_url, apiKey, { action: "services" });
+    console.log("PROVIDER RAW RESPONSE:", result.data?.slice(0, 3));
+console.log("TOTAL FROM PROVIDER:", Array.isArray(result.data) ? result.data.length : 0);
+console.log("4132 CHECK:", result.data?.find(s => String(s.service) === "4132"));
     if (!result.ok) return res.status(502).json({ success: false, error: result.error, retryable: result.retryable });
 
     const list = Array.isArray(result.data) ? result.data : [];
