@@ -70,7 +70,7 @@
   const loginError = document.getElementById('loginError');
 
   async function loadKeys() {
-    const res = await fetch('/api/admin/list-keys');
+    const res = await fetch('/api/admin/keys');
     if (!res.ok) return false;
     const data = await res.json();
     renderKeys(data.keys || []);
@@ -104,10 +104,10 @@
   document.getElementById('loginBtn').addEventListener('click', async () => {
     loginError.style.display = 'none';
     const password = document.getElementById('passwordInput').value;
-    const res = await fetch('/api/admin/login', {
+    const res = await fetch('/api/admin/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password })
+      body: JSON.stringify({ action: 'login', password })
     });
     if (res.ok) {
       await loadKeys();
@@ -120,10 +120,10 @@
 
   document.getElementById('generateBtn').addEventListener('click', async () => {
     const durationMinutes = Number(document.getElementById('durationSelect').value);
-    await fetch('/api/admin/generate-key', {
+    await fetch('/api/admin/keys', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ durationMinutes })
+      body: JSON.stringify({ action: 'generate', durationMinutes })
     });
     await loadKeys();
   });
@@ -139,10 +139,10 @@
       if (amountStr === null) return;
       const amount = Number(amountStr);
       if (!Number.isFinite(amount) || amount === 0) { alert('Invalid amount.'); return; }
-      const res = await fetch('/api/admin/wallet-adjust', {
+      const res = await fetch('/api/admin/wallet', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keyId: id, amount, description: 'Manual admin adjustment' })
+        body: JSON.stringify({ action: 'adjust', keyId: id, amount, description: 'Manual admin adjustment' })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) { alert(data.error || 'Failed to adjust balance.'); return; }
@@ -150,11 +150,11 @@
       return;
     }
 
-    const endpoint = action === 'reload' ? '/api/admin/reload-key' : '/api/admin/revoke-key';
-    await fetch(endpoint, {
+    const mapped = action === 'reload' ? 'reload' : 'revoke';
+    await fetch('/api/admin/keys', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id })
+      body: JSON.stringify({ action: mapped, id })
     });
     await loadKeys();
   });

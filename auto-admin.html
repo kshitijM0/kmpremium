@@ -50,7 +50,6 @@
 <div id="mainPanel" class="panel" style="display:none;">
   <h1>Auto Order — Master Provider Manager</h1>
 
-  <!-- PROVIDERS -->
   <div class="card">
     <h2>Master Providers</h2>
     <div class="row">
@@ -70,7 +69,6 @@
     </div>
   </div>
 
-  <!-- SERVICE MAPPING -->
   <div class="card">
     <h2>Service Mapping (Auto Order pools)</h2>
     <div class="tabs" id="typeTabs"></div>
@@ -102,7 +100,7 @@
   let providersCache = [];
 
   async function boot() {
-    const res = await fetch('/api/auto/providers-list');
+    const res = await fetch('/api/auto/providers');
     if (res.ok) {
       loginBox.style.display = 'none';
       mainPanel.style.display = 'block';
@@ -114,9 +112,9 @@
 
   document.getElementById('loginBtn').addEventListener('click', async () => {
     const password = document.getElementById('passwordInput').value;
-    const res = await fetch('/api/admin/login', {
+    const res = await fetch('/api/admin/auth', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ password })
+      body: JSON.stringify({ action: 'login', password })
     });
     if (res.ok) { await boot(); }
     else {
@@ -127,9 +125,8 @@
     }
   });
 
-  // ---------- PROVIDERS ----------
   async function loadProviders() {
-    const res = await fetch('/api/auto/providers-list');
+    const res = await fetch('/api/auto/providers');
     const data = await res.json();
     providersCache = data.providers || [];
     renderProviders();
@@ -151,7 +148,7 @@
         <td>${p.last_test_balance ?? '—'} ${p.last_test_currency ?? ''}</td>
         <td>
           <button class="ghost" data-action="test" data-id="${p.id}">Test</button>
-          <button class="ghost" data-action="fetch" data-id="${p.id}">Fetch Services</button>
+          <button class="ghost" data-action="fetch-services" data-id="${p.id}">Fetch Services</button>
           <button class="ghost" data-action="toggle" data-id="${p.id}" data-status="${p.status}">${p.status === 'active' ? 'Disable' : 'Enable'}</button>
           <button class="ghost" data-action="duplicate" data-id="${p.id}">Duplicate</button>
           <button class="ghost danger" data-action="delete" data-id="${p.id}">Delete</button>
@@ -167,9 +164,9 @@
     const errEl = document.getElementById('providerFormError');
     errEl.style.display = 'none';
 
-    const res = await fetch('/api/auto/providers-create', {
+    const res = await fetch('/api/auto/providers', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ providerName, apiUrl, apiKey })
+      body: JSON.stringify({ action: 'create', providerName, apiUrl, apiKey })
     });
     const data = await res.json();
     if (!data.success) { errEl.textContent = data.error; errEl.style.display = 'block'; return; }
@@ -187,13 +184,13 @@
 
     if (action === 'test') {
       btn.textContent = 'Testing...'; btn.disabled = true;
-      const res = await fetch('/api/auto/providers-test', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+      const res = await fetch('/api/auto/providers', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'test', id }) });
       const data = await res.json();
       if (!data.success) alert('Test failed: ' + (data.error || data.status));
       await loadProviders();
-    } else if (action === 'fetch') {
+    } else if (action === 'fetch-services') {
       btn.textContent = 'Fetching...'; btn.disabled = true;
-      const res = await fetch('/api/auto/providers-fetch-services', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+      const res = await fetch('/api/auto/providers', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'fetch-services', id }) });
       const data = await res.json();
       if (!data.success) alert('Fetch failed: ' + data.error);
       else alert(`Fetched ${data.fetched}, saved ${data.saved}, deactivated ${data.deactivated}.`);
@@ -201,20 +198,19 @@
       renderMapServiceSelect();
     } else if (action === 'toggle') {
       const newStatus = btn.dataset.status === 'active' ? 'disabled' : 'active';
-      await fetch('/api/auto/providers-update', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id, status: newStatus }) });
+      await fetch('/api/auto/providers', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'update', id, status: newStatus }) });
       await loadProviders();
     } else if (action === 'duplicate') {
-      await fetch('/api/auto/providers-duplicate', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+      await fetch('/api/auto/providers', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'duplicate', id }) });
       await loadProviders();
     } else if (action === 'delete') {
       if (!confirm('Delete this provider and all its mappings?')) return;
-      await fetch('/api/auto/providers-delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+      await fetch('/api/auto/providers', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'delete', id }) });
       await loadProviders();
       await loadMapping();
     }
   });
 
-  // ---------- MAPPING ----------
   function renderTypeTabs() {
     const wrap = document.getElementById('typeTabs');
     wrap.innerHTML = SERVICE_TYPES.map(t => `<button data-type="${t}" class="${t === currentType ? 'active' : ''}">${t}</button>`).join('');
@@ -237,7 +233,7 @@
     const providerId = document.getElementById('mapProviderSelect').value;
     const sel = document.getElementById('mapServiceSelect');
     if (!providerId) { sel.innerHTML = ''; return; }
-    const res = await fetch('/api/auto/services-list?providerId=' + encodeURIComponent(providerId));
+    const res = await fetch('/api/auto/services?providerId=' + encodeURIComponent(providerId));
     const data = await res.json();
     const services = data.services || [];
     sel.innerHTML = services.map(s => `<option value="${s.service_id}">${s.service_id} — ${s.service_name || ''} (rate ${s.rate ?? '?'})</option>`).join('');
@@ -253,9 +249,9 @@
 
     if (!providerId || !providerServiceId) { errEl.textContent = 'Pick a provider and a service.'; errEl.style.display = 'block'; return; }
 
-    const res = await fetch('/api/auto/mapping-save', {
+    const res = await fetch('/api/auto/mapping', {
       method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ serviceType: currentType, providerId, providerServiceId, customerRate: customerRate ? Number(customerRate) : null })
+      body: JSON.stringify({ action: 'save', serviceType: currentType, providerId, providerServiceId, customerRate: customerRate ? Number(customerRate) : null })
     });
     const data = await res.json();
     if (!data.success) { errEl.textContent = data.error; errEl.style.display = 'block'; return; }
@@ -264,7 +260,7 @@
   });
 
   async function loadMapping() {
-    const res = await fetch('/api/auto/mapping-list?serviceType=' + currentType);
+    const res = await fetch('/api/auto/mapping?serviceType=' + currentType);
     const data = await res.json();
     renderMapping(data.mapping || []);
   }
@@ -299,7 +295,7 @@
 
     if (action === 'remove') {
       if (!confirm('Remove this mapping?')) return;
-      await fetch('/api/auto/mapping-delete', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id }) });
+      await fetch('/api/auto/mapping', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'delete', id }) });
       await loadMapping();
       return;
     }
@@ -311,7 +307,7 @@
     if (swapWith < 0 || swapWith >= ids.length) return;
     [ids[idx], ids[swapWith]] = [ids[swapWith], ids[idx]];
 
-    await fetch('/api/auto/mapping-reorder', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ orderedIds: ids }) });
+    await fetch('/api/auto/mapping', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'reorder', orderedIds: ids }) });
     await loadMapping();
   });
 
