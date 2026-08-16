@@ -36,6 +36,8 @@
   .tabs button.active { background: #f2f2f2; color: #0a0a0a; }
   .empty { text-align: center; color: #777; padding: 16px; }
   .table-wrap { overflow-x: auto; }
+  .service-select-wrap { min-width: 260px; flex: 1; }
+  .service-search { width: 100%; margin-bottom: 8px; }
 </style>
 </head>
 <body>
@@ -75,10 +77,16 @@
 
     <div class="row">
       <select id="mapProviderSelect" style="min-width:160px;"></select>
-      <select id="mapServiceSelect" style="min-width:260px;"></select>
+
+      <div class="service-select-wrap">
+        <input id="serviceSearch" class="service-search" type="text" placeholder="Search service ID or name...">
+        <select id="mapServiceSelect" style="width:100%;"></select>
+      </div>
+
       <input id="mapCustomerRate" placeholder="Customer rate / 1000" style="width:150px;">
       <button id="addMappingBtn" class="secondary">Add to pool</button>
     </div>
+
     <div id="mappingFormError" class="error" style="display:none;"></div>
 
     <div class="table-wrap">
@@ -98,6 +106,7 @@
   const SERVICE_TYPES = ['views','likes','shares','saves','reposts','comments'];
   let currentType = 'views';
   let providersCache = [];
+  let servicesCache = [];
 
   async function boot() {
     const res = await fetch('/api/auto/providers');
@@ -113,11 +122,14 @@
   document.getElementById('loginBtn').addEventListener('click', async () => {
     const password = document.getElementById('passwordInput').value;
     const res = await fetch('/api/admin/auth', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ action: 'login', password })
     });
-    if (res.ok) { await boot(); }
-    else {
+    if (res.ok) {
+      await boot();
+    } else {
       const data = await res.json().catch(() => ({}));
       const el = document.getElementById('loginError');
       el.textContent = data.error || 'Login failed.';
@@ -126,7 +138,7 @@
   });
 
   async function loadProviders() {
-    const res = await fetch('/api/auto/providers');
+    const res = await fetch('/api/auto/providers', { credentials: 'include' });
     const data = await res.json();
     providersCache = data.providers || [];
     renderProviders();
@@ -165,11 +177,17 @@
     errEl.style.display = 'none';
 
     const res = await fetch('/api/auto/providers', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ action: 'create', providerName, apiUrl, apiKey })
     });
     const data = await res.json();
-    if (!data.success) { errEl.textContent = data.error; errEl.style.display = 'block'; return; }
+    if (!data.success) {
+      errEl.textContent = data.error;
+      errEl.style.display = 'block';
+      return;
+    }
     document.getElementById('newProviderName').value = '';
     document.getElementById('newProviderUrl').value = '';
     document.getElementById('newProviderKey').value = '';
@@ -183,29 +201,66 @@
     const action = btn.dataset.action;
 
     if (action === 'test') {
-      btn.textContent = 'Testing...'; btn.disabled = true;
-      const res = await fetch('/api/auto/providers', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'test', id }) });
+      btn.textContent = 'Testing...';
+      btn.disabled = true;
+      const res = await fetch('/api/auto/providers', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'test', id })
+      });
       const data = await res.json();
       if (!data.success) alert('Test failed: ' + (data.error || data.status));
       await loadProviders();
+
     } else if (action === 'fetch-services') {
-      btn.textContent = 'Fetching...'; btn.disabled = true;
-      const res = await fetch('/api/auto/providers', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'fetch-services', id }) });
+      btn.textContent = 'Fetching...';
+      btn.disabled = true;
+      const res = await fetch('/api/auto/providers', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'fetch-services', id })
+      });
       const data = await res.json();
-      if (!data.success) alert('Fetch failed: ' + data.error);
-      else alert(`Fetched ${data.fetched}, saved ${data.saved}, deactivated ${data.deactivated}.`);
+      if (!data.success) {
+        alert('Fetch failed: ' + data.error);
+      } else {
+        alert(`Fetched ${data.fetched}, saved ${data.saved}, deactivated ${data.deactivated}.`);
+      }
       await loadProviders();
-      renderMapServiceSelect();
+
+      if (document.getElementById('mapProviderSelect').value === id) {
+        await renderMapServiceSelect();
+      }
+
     } else if (action === 'toggle') {
       const newStatus = btn.dataset.status === 'active' ? 'disabled' : 'active';
-      await fetch('/api/auto/providers', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'update', id, status: newStatus }) });
+      await fetch('/api/auto/providers', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'update', id, status: newStatus })
+      });
       await loadProviders();
+
     } else if (action === 'duplicate') {
-      await fetch('/api/auto/providers', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'duplicate', id }) });
+      await fetch('/api/auto/providers', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'duplicate', id })
+      });
       await loadProviders();
+
     } else if (action === 'delete') {
       if (!confirm('Delete this provider and all its mappings?')) return;
-      await fetch('/api/auto/providers', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'delete', id }) });
+      await fetch('/api/auto/providers', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'delete', id })
+      });
       await loadProviders();
       await loadMapping();
     }
@@ -213,7 +268,10 @@
 
   function renderTypeTabs() {
     const wrap = document.getElementById('typeTabs');
-    wrap.innerHTML = SERVICE_TYPES.map(t => `<button data-type="${t}" class="${t === currentType ? 'active' : ''}">${t}</button>`).join('');
+    wrap.innerHTML = SERVICE_TYPES.map(t =>
+      `<button data-type="${t}" class="${t === currentType ? 'active' : ''}">${t}</button>`
+    ).join('');
+
     wrap.querySelectorAll('button').forEach(b => {
       b.addEventListener('click', async () => {
         currentType = b.dataset.type;
@@ -225,52 +283,140 @@
 
   function renderMapProviderSelect() {
     const sel = document.getElementById('mapProviderSelect');
-    sel.innerHTML = providersCache.filter(p => p.status === 'active').map(p => `<option value="${p.id}">${p.provider_name}</option>`).join('');
+    sel.innerHTML = providersCache
+      .filter(p => p.status === 'active')
+      .map(p => `<option value="${p.id}">${p.provider_name}</option>`)
+      .join('');
+
     renderMapServiceSelect();
   }
 
   async function renderMapServiceSelect() {
     const providerId = document.getElementById('mapProviderSelect').value;
     const sel = document.getElementById('mapServiceSelect');
-    if (!providerId) { sel.innerHTML = ''; return; }
-    const res = await fetch('/api/auto/services?providerId=' + encodeURIComponent(providerId));
-    const data = await res.json();
-    const services = data.services || [];
-    sel.innerHTML = services.map(s => `<option value="${s.service_id}">${s.service_id} — ${s.service_name || ''} (rate ${s.rate ?? '?'})</option>`).join('');
+    const search = document.getElementById('serviceSearch');
+
+    servicesCache = [];
+    search.value = '';
+
+    if (!providerId) {
+      sel.innerHTML = '';
+      return;
+    }
+
+    sel.innerHTML = '<option value="">Loading services...</option>';
+
+    try {
+      const res = await fetch(
+        '/api/auto/services?providerId=' + encodeURIComponent(providerId),
+        { credentials: 'include' }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        sel.innerHTML = '<option value="">Failed to load services</option>';
+        return;
+      }
+
+      servicesCache = data.services || [];
+      filterServices();
+
+    } catch (err) {
+      sel.innerHTML = '<option value="">Failed to load services</option>';
+    }
   }
-  document.getElementById('mapProviderSelect').addEventListener('change', renderMapServiceSelect);
+
+  function filterServices() {
+    const search = document
+      .getElementById('serviceSearch')
+      .value
+      .trim()
+      .toLowerCase();
+
+    const sel = document.getElementById('mapServiceSelect');
+
+    const filtered = servicesCache.filter(s => {
+      const id = String(s.service_id || '').toLowerCase();
+      const name = String(s.service_name || '').toLowerCase();
+      return !search || id.includes(search) || name.includes(search);
+    });
+
+    if (!filtered.length) {
+      sel.innerHTML = '<option value="">No matching service</option>';
+      return;
+    }
+
+    sel.innerHTML = filtered.map(s => `
+      <option value="${s.service_id}">
+        ${s.service_id} — ${s.service_name || 'Unnamed'} (rate ${s.rate ?? '?'})
+      </option>
+    `).join('');
+  }
+
+  document.getElementById('serviceSearch').addEventListener('input', filterServices);
+
+  document.getElementById('mapProviderSelect').addEventListener(
+    'change',
+    renderMapServiceSelect
+  );
 
   document.getElementById('addMappingBtn').addEventListener('click', async () => {
     const providerId = document.getElementById('mapProviderSelect').value;
     const providerServiceId = document.getElementById('mapServiceSelect').value;
     const customerRate = document.getElementById('mapCustomerRate').value;
     const errEl = document.getElementById('mappingFormError');
+
     errEl.style.display = 'none';
 
-    if (!providerId || !providerServiceId) { errEl.textContent = 'Pick a provider and a service.'; errEl.style.display = 'block'; return; }
+    if (!providerId || !providerServiceId) {
+      errEl.textContent = 'Pick a provider and a service.';
+      errEl.style.display = 'block';
+      return;
+    }
 
     const res = await fetch('/api/auto/mapping', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ action: 'save', serviceType: currentType, providerId, providerServiceId, customerRate: customerRate ? Number(customerRate) : null })
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        action: 'save',
+        serviceType: currentType,
+        providerId,
+        providerServiceId,
+        customerRate: customerRate ? Number(customerRate) : null
+      })
     });
+
     const data = await res.json();
-    if (!data.success) { errEl.textContent = data.error; errEl.style.display = 'block'; return; }
+
+    if (!data.success) {
+      errEl.textContent = data.error;
+      errEl.style.display = 'block';
+      return;
+    }
+
     document.getElementById('mapCustomerRate').value = '';
     await loadMapping();
   });
 
   async function loadMapping() {
-    const res = await fetch('/api/auto/mapping?serviceType=' + currentType);
+    const res = await fetch(
+      '/api/auto/mapping?serviceType=' + encodeURIComponent(currentType),
+      { credentials: 'include' }
+    );
     const data = await res.json();
     renderMapping(data.mapping || []);
   }
 
   function renderMapping(list) {
     const body = document.getElementById('mappingBody');
+
     if (!list.length) {
       body.innerHTML = '<tr><td colspan="5" class="empty">No services mapped for this type yet.</td></tr>';
       return;
     }
+
     body.innerHTML = list.map((m, i) => `
       <tr data-id="${m.id}">
         <td>${i + 1}</td>
@@ -289,13 +435,21 @@
   document.getElementById('mappingBody').addEventListener('click', async (e) => {
     const btn = e.target.closest('button[data-action]');
     if (!btn) return;
+
     const tr = btn.closest('tr');
     const id = tr.dataset.id;
     const action = btn.dataset.action;
 
     if (action === 'remove') {
       if (!confirm('Remove this mapping?')) return;
-      await fetch('/api/auto/mapping', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'delete', id }) });
+
+      await fetch('/api/auto/mapping', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'delete', id })
+      });
+
       await loadMapping();
       return;
     }
@@ -304,10 +458,18 @@
     const ids = rows.map(r => r.dataset.id);
     const idx = ids.indexOf(id);
     const swapWith = action === 'up' ? idx - 1 : idx + 1;
+
     if (swapWith < 0 || swapWith >= ids.length) return;
+
     [ids[idx], ids[swapWith]] = [ids[swapWith], ids[idx]];
 
-    await fetch('/api/auto/mapping', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ action: 'reorder', orderedIds: ids }) });
+    await fetch('/api/auto/mapping', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ action: 'reorder', orderedIds: ids })
+    });
+
     await loadMapping();
   });
 
