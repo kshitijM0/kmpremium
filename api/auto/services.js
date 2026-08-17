@@ -12,7 +12,6 @@ module.exports = async (req, res) => {
     .select("id, provider_id, service_id, service_name, category, rate, minimum, maximum, refill, cancel, average_time, active, api_providers(provider_name)")
     .eq("active", true)
     .order("category", { ascending: true })
-    .limit(500);
 
   if (providerId) query = query.eq("provider_id", providerId);
   if (category) query = query.eq("category", category);
