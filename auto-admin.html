@@ -319,8 +319,8 @@
         return;
       }
 
-      servicesCache = data.services || [];
-      filterServices();
+      servicesCache = [];
+sel.innerHTML = '<option value="">Type in search box to search services...</option>';
 
     } catch (err) {
       sel.innerHTML = '<option value="">Failed to load services</option>';
@@ -354,7 +354,7 @@
     `).join('');
   }
 
-  document.getElementById('serviceSearch').addEventListener('input', filterServices);
+ document.getElementById('serviceSearch').addEventListener('input', searchServices);
 
   document.getElementById('mapProviderSelect').addEventListener(
     'change',
