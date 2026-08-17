@@ -20,17 +20,10 @@ module.exports = async (req, res) => {
   }
 
   // default: login
- // Temporarily disable rate limiting for testing
-const ip = getClientIp(req);
-
-// const { adminLogin } = getLimiters();
-// const { success } = await adminLogin.limit(ip);
-
-// if (!success) {
-//   return res.status(429).json({
-//     error: "Too many attempts. Try again later."
-//   });
-// }
+  const ip = getClientIp(req);
+  const { adminLogin } = getLimiters();
+  const { success } = await adminLogin.limit(ip);
+  if (!success) return res.status(429).json({ error: "Too many attempts. Try again later." });
 
   const password = req.body && req.body.password;
   if (!password || typeof password !== "string") {
