@@ -353,7 +353,35 @@ sel.innerHTML = '<option value="">Type in search box to search services...</opti
       </option>
     `).join('');
   }
+async function searchServices() {
+  const providerId = document.getElementById('mapProviderSelect').value;
+  const keyword = document.getElementById('serviceSearch').value.trim();
 
+  if (!providerId) return;
+
+  if (keyword.length < 2) {
+    servicesCache = [];
+    document.getElementById('mapServiceSelect').innerHTML =
+      '<option value="">Type at least 2 characters...</option>';
+    return;
+  }
+
+  const res = await fetch(
+    '/api/auto/services?providerId=' +
+      encodeURIComponent(providerId) +
+      '&search=' +
+      encodeURIComponent(keyword),
+    {
+      credentials: 'include'
+    }
+  );
+
+  const data = await res.json();
+
+  servicesCache = data.services || [];
+
+  filterServices();
+}
  document.getElementById('serviceSearch').addEventListener('input', searchServices);
 
   document.getElementById('mapProviderSelect').addEventListener(
