@@ -9,17 +9,20 @@
   body {
     margin: 0; min-height: 100vh; background: #0a0a0a; color: #f2f2f2;
     font-family: -apple-system, Segoe UI, Roboto, sans-serif;
-    display: flex; align-items: center; justify-content: center; padding: 24px;
+    padding: 24px;
   }
+  .login-wrap { display: flex; align-items: center; justify-content: center; min-height: 80vh; }
   .box { background: #151515; border: 1px solid #262626; border-radius: 14px; padding: 24px; width: 100%; max-width: 420px; }
   h1 { font-size: 1.15rem; margin: 0 0 16px; }
+  h2 { font-size: 1rem; margin: 26px 0 12px; color: #ddd; }
   input, select { width: 100%; background: #1e1e1e; border: 1px solid #333; color: #f2f2f2; border-radius: 8px; padding: 10px 12px; font-size: 0.9rem; margin-bottom: 10px; }
   button { width: 100%; background: #f2f2f2; color: #0a0a0a; border: none; border-radius: 8px; padding: 10px 12px; font-weight: 600; font-size: 0.9rem; cursor: pointer; }
   button.secondary { background: transparent; color: #34d399; border: 1px solid #34d399; }
   button.danger { background: transparent; color: #f87171; border: 1px solid #f87171; }
   button.walletbtn { background: transparent; color: #60a5fa; border: 1px solid #60a5fa; }
   .error { color: #f87171; font-size: 0.85rem; margin: -4px 0 10px; }
-  .panel-wide { max-width: 900px; width: 100%; }
+  .panel-wide { max-width: 900px; width: 100%; margin: 0 auto; }
+  .card { background: #151515; border: 1px solid #262626; border-radius: 14px; padding: 18px; margin-bottom: 20px; }
   table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
   th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #262626; white-space: nowrap; }
   th { color: #999; font-weight: 500; }
@@ -31,37 +34,56 @@
   .empty { text-align: center; color: #777; padding: 20px; }
   .table-wrap { overflow-x: auto; }
   .muted { color: #666; }
+  a.ss-link { color: #60a5fa; }
 </style>
 </head>
 <body>
 
-<div id="loginBox" class="box">
-  <h1>Admin login</h1>
-  <input id="passwordInput" type="password" placeholder="Password">
-  <div id="loginError" class="error" style="display:none;"></div>
-  <button id="loginBtn">Log in</button>
+<div id="loginBox" class="login-wrap">
+  <div class="box">
+    <h1>Admin login</h1>
+    <input id="passwordInput" type="password" placeholder="Password">
+    <div id="loginError" class="error" style="display:none;"></div>
+    <button id="loginBtn">Log in</button>
+  </div>
 </div>
 
-<div id="adminBox" class="box panel-wide" style="display:none;">
-  <h1>Key admin</h1>
-  <div class="row">
-    <select id="durationSelect">
-      <option value="60">1 hour</option>
-      <option value="1440" selected>24 hours</option>
-      <option value="2880">48 hours</option>
-      <option value="10080">7 days</option>
-      <option value="43200">30 days</option>
-    </select>
-    <button id="generateBtn" class="secondary">Generate key</button>
+<div id="adminBox" class="panel-wide" style="display:none;">
+
+  <div class="card">
+    <h1>Key admin</h1>
+    <div class="row">
+      <select id="durationSelect">
+        <option value="60">1 hour</option>
+        <option value="1440" selected>24 hours</option>
+        <option value="2880">48 hours</option>
+        <option value="10080">7 days</option>
+        <option value="43200">30 days</option>
+      </select>
+      <button id="generateBtn" class="secondary">Generate key</button>
+    </div>
+    <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Key</th><th>Status</th><th>Source</th><th>Wallet (device)</th><th>Expires</th><th>Actions</th></tr>
+      </thead>
+      <tbody id="keysTableBody"></tbody>
+    </table>
+    </div>
   </div>
-  <div class="table-wrap">
-  <table>
-    <thead>
-      <tr><th>Key</th><th>Status</th><th>Source</th><th>Wallet (device)</th><th>Expires</th><th>Actions</th></tr>
-    </thead>
-    <tbody id="keysTableBody"></tbody>
-  </table>
+
+  <div class="card">
+    <h2 style="margin-top:0;">Pending UPI Deposits</h2>
+    <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Amount</th><th>UTR</th><th>Screenshot</th><th>Submitted</th><th>Actions</th></tr>
+      </thead>
+      <tbody id="depositsTableBody"></tbody>
+    </table>
+    </div>
   </div>
+
 </div>
 
 <script>
@@ -101,6 +123,33 @@
     `).join('');
   }
 
+  async function loadDeposits() {
+    const res = await fetch('/api/admin/wallet');
+    if (!res.ok) return;
+    const data = await res.json();
+    renderDeposits(data.deposits || []);
+  }
+
+  function renderDeposits(deposits) {
+    const body = document.getElementById('depositsTableBody');
+    if (!deposits.length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty">No pending deposits.</td></tr>';
+      return;
+    }
+    body.innerHTML = deposits.map(d => `
+      <tr>
+        <td>₹${Number(d.amount).toFixed(2)}</td>
+        <td class="mono">${d.gateway_reference || '—'}</td>
+        <td>${d.screenshot_url ? `<a class="ss-link" href="${d.screenshot_url}" target="_blank">View</a>` : '—'}</td>
+        <td>${new Date(d.created_at).toLocaleString()}</td>
+        <td class="actions">
+          <button class="secondary" data-action="approve" data-id="${d.id}">Approve</button>
+          <button class="danger" data-action="reject" data-id="${d.id}">Reject</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
   document.getElementById('loginBtn').addEventListener('click', async () => {
     loginError.style.display = 'none';
     const password = document.getElementById('passwordInput').value;
@@ -111,6 +160,7 @@
     });
     if (res.ok) {
       await loadKeys();
+      await loadDeposits();
     } else {
       const data = await res.json().catch(() => ({}));
       loginError.textContent = data.error || 'Login failed.';
@@ -159,7 +209,38 @@
     await loadKeys();
   });
 
+  document.getElementById('depositsTableBody').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const transactionId = btn.dataset.id;
+    const action = btn.dataset.action;
+
+    if (action === 'approve') {
+      if (!confirm('Approve this deposit and credit the wallet?')) return;
+      const res = await fetch('/api/admin/wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approve-deposit', transactionId })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.error || 'Failed to approve.'); return; }
+    } else if (action === 'reject') {
+      const reason = prompt('Rejection reason (optional):') || '';
+      const res = await fetch('/api/admin/wallet', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reject-deposit', transactionId, reason })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { alert(data.error || 'Failed to reject.'); return; }
+    }
+
+    await loadDeposits();
+    await loadKeys();
+  });
+
   loadKeys();
+  loadDeposits();
 </script>
 </body>
 </html>

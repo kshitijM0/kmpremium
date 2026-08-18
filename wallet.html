@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KM Panel — Wallet</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: #0a0a0a; color: #f2f2f2; font-family: -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; }
+  .box { max-width: 420px; margin: 0 auto; background: #151515; border: 1px solid #262626; border-radius: 14px; padding: 22px; margin-bottom: 16px; }
+  h1 { font-size: 1.1rem; margin: 0 0 14px; }
+  .balance { font-size: 2rem; font-weight: 700; margin-bottom: 4px; }
+  .muted { color: #888; font-size: 0.85rem; }
+  input, textarea { width: 100%; background: #1e1e1e; border: 1px solid #333; color: #f2f2f2; border-radius: 8px; padding: 10px 12px; font-size: 0.9rem; margin-bottom: 10px; box-sizing: border-box; }
+  button { width: 100%; background: #f2f2f2; color: #0a0a0a; border: none; border-radius: 8px; padding: 10px 12px; font-weight: 600; font-size: 0.9rem; cursor: pointer; }
+  button.secondary { background: transparent; color: #34d399; border: 1px solid #34d399; }
+  .qr-wrap { text-align: center; margin: 14px 0; }
+  .qr-wrap img { border-radius: 10px; background: #fff; padding: 10px; }
+  .upi-id { text-align: center; font-family: monospace; font-size: 0.95rem; margin-top: 6px; user-select: all; }
+  .error { color: #f87171; font-size: 0.85rem; margin: -4px 0 10px; }
+  .success { color: #34d399; font-size: 0.85rem; }
+  .tx-row { display: flex; justify-content: space-between; font-size: 0.82rem; padding: 8px 0; border-bottom: 1px solid #262626; }
+  .status-pending { color: #fbbf24; }
+  .status-completed { color: #34d399; }
+  .status-failed { color: #f87171; }
+</style>
+</head>
+<body>
+
+<div class="box" id="balanceBox">
+  <div class="muted">Wallet balance</div>
+  <div class="balance" id="balanceValue">—</div>
+</div>
+
+<div class="box" id="depositBox">
+  <h1>Add funds (UPI)</h1>
+  <div class="qr-wrap">
+    <img id="qrImage" src="" alt="UPI QR" width="180" height="180">
+    <div class="upi-id" id="upiIdText"></div>
+    <div class="muted" id="upiNameText" style="margin-top:2px;"></div>
+    <button id="copyUpiBtn" class="secondary" style="width:auto; padding:6px 14px; margin-top:10px; font-size:0.8rem;">Copy UPI ID</button>
+  </div>
+  <div id="upiError" class="error" style="display:none; text-align:center;"></div>
+  <input id="amountInput" type="number" placeholder="Amount paid (₹)" min="1">
+  <button id="paidBtn" class="secondary">I've Paid</button>
+
+  <div id="claimForm" style="display:none; margin-top:14px;">
+    <input id="utrInput" placeholder="UTR / Transaction ID">
+    <input id="screenshotInput" type="file" accept="image/*">
+    <div id="depositError" class="error" style="display:none;"></div>
+    <div id="depositSuccess" class="success" style="display:none;"></div>
+    <button id="submitClaimBtn">Submit for verification</button>
+  </div>
+</div>
+
+<div class="box">
+  <h1>Recent transactions</h1>
+  <div id="txList" class="muted">Loading…</div>
+</div>
+
+<script>
+  let upiId = '';
+  let upiName = 'KM Panel';
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function updateQr() {
+    if (!upiId) return;
+    const amount = document.getElementById('amountInput').value;
+    let upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(upiName)}&cu=INR`;
+    if (amount) upiLink += `&am=${encodeURIComponent(amount)}`;
+    document.getElementById('qrImage').src = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(upiLink);
+  }
+
+  async function loadWalletInfo() {
+    const meRes = await fetch('/api/session');
+    if (!meRes.ok) {
+      document.body.innerHTML = '<div class="box"><p>Session expired. <a href="/" style="color:#34d399;">Go unlock with your key</a> first.</p></div>';
+      return;
+    }
+    const me = await meRes.json();
+    document.getElementById('balanceValue').textContent = '₹' + Number(me.walletBalance).toFixed(2);
+
+    const depRes = await fetch('/api/wallet-deposit');
+    const dep = await depRes.json();
+    const errEl = document.getElementById('upiError');
+    if (dep.success) {
+      upiId = dep.upiId;
+      upiName = dep.upiName;
+      document.getElementById('upiIdText').textContent = upiId;
+      document.getElementById('upiNameText').textContent = upiName;
+      updateQr();
+    } else {
+      document.getElementById('qrImage').style.display = 'none';
+      document.getElementById('copyUpiBtn').style.display = 'none';
+      errEl.textContent = dep.error || 'Deposits are temporarily unavailable.';
+      errEl.style.display = 'block';
+      document.getElementById('amountInput').disabled = true;
+      document.getElementById('paidBtn').disabled = true;
+    }
+
+    const txRes = await fetch('/api/session?include=transactions');
+    const tx = await txRes.json();
+    const list = document.getElementById('txList');
+    if (!tx.transactions || !tx.transactions.length) {
+      list.innerHTML = 'No transactions yet.';
+    } else {
+      list.innerHTML = tx.transactions.map(t => `
+        <div class="tx-row">
+          <span>${t.type} — ${new Date(t.created_at).toLocaleString()}</span>
+          <span class="status-${t.status}">${t.amount > 0 ? '+' : ''}₹${Number(t.amount).toFixed(2)} (${t.status})</span>
+        </div>
+      `).join('');
+    }
+  }
+
+  document.getElementById('amountInput').addEventListener('input', updateQr);
+
+  document.getElementById('copyUpiBtn').addEventListener('click', () => {
+    navigator.clipboard.writeText(upiId).then(() => {
+      const btn = document.getElementById('copyUpiBtn');
+      const original = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    });
+  });
+
+  document.getElementById('paidBtn').addEventListener('click', () => {
+    document.getElementById('claimForm').style.display = 'block';
+  });
+
+  document.getElementById('submitClaimBtn').addEventListener('click', async () => {
+    const amount = Number(document.getElementById('amountInput').value);
+    const utr = document.getElementById('utrInput').value.trim();
+    const fileInput = document.getElementById('screenshotInput');
+    const errEl = document.getElementById('depositError');
+    const okEl = document.getElementById('depositSuccess');
+    errEl.style.display = 'none';
+    okEl.style.display = 'none';
+
+    if (!amount || amount <= 0) { errEl.textContent = 'Enter a valid amount.'; errEl.style.display = 'block'; return; }
+    if (!utr) { errEl.textContent = 'UTR / Transaction ID is required.'; errEl.style.display = 'block'; return; }
+
+    let screenshotBase64 = null;
+    if (fileInput.files[0]) {
+      screenshotBase64 = await fileToBase64(fileInput.files[0]);
+    }
+
+    const res = await fetch('/api/wallet-deposit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount, utr, screenshotBase64 })
+    });
+    const data = await res.json();
+    if (!data.success) { errEl.textContent = data.error; errEl.style.display = 'block'; return; }
+
+    okEl.textContent = 'Submitted! Your deposit is pending admin verification.';
+    okEl.style.display = 'block';
+    document.getElementById('claimForm').style.display = 'none';
+    document.getElementById('utrInput').value = '';
+    fileInput.value = '';
+  });
+
+  loadWalletInfo();
+</script>
+</body>
+</html>
