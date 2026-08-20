@@ -1,0 +1,10 @@
+.kmp-outer-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
+.kmp-outer-toggle button { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid #333; background: #151515; color: #ccc; font-weight: 600; font-size: 0.88rem; cursor: pointer; }
+.kmp-outer-toggle button.active { background: #f2f2f2; color: #0a0a0a; border-color: #f2f2f2; }
+.kmp-engine-card { background: var(--card-bg, #151515); border: 1px solid var(--border, #262626); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
+.kmp-engine-card h2 { font-size: 1rem; margin: 0 0 4px; }
+.kmp-cost-box { background: #1e1e1e; border: 1px solid #333; border-radius: 10px; padding: 12px; margin: 12px 0; font-size: 0.85rem; }
+.kmp-history-row { display: flex; justify-content: space-between; font-size: 0.8rem; padding: 8px 0; border-bottom: 1px solid #262626; gap: 10px; flex-wrap: wrap; }
+.kmp-tag { padding: 1px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 600; }
+.kmp-tag.auto { background: #052e2e; color: #22d3ee; }
+.kmp-tag.manual { background: #2e2005; color: #fbbf24; }
