@@ -1,10 +1,64 @@
 .kmp-outer-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
-.kmp-outer-toggle button { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid #333; background: #151515; color: #ccc; font-weight: 600; font-size: 0.88rem; cursor: pointer; }
+.kmp-outer-toggle button { flex: 1; padding: 12px; border-radius: 10px; border: 1px solid #333; background: #151515; color: #ccc; font-weight: 600; font-size: 0.88rem; cursor: pointer; transition: all .15s; }
 .kmp-outer-toggle button.active { background: #f2f2f2; color: #0a0a0a; border-color: #f2f2f2; }
-.kmp-engine-card { background: var(--card-bg, #151515); border: 1px solid var(--border, #262626); border-radius: 14px; padding: 18px; margin-bottom: 16px; }
-.kmp-engine-card h2 { font-size: 1rem; margin: 0 0 4px; }
-.kmp-cost-box { background: #1e1e1e; border: 1px solid #333; border-radius: 10px; padding: 12px; margin: 12px 0; font-size: 0.85rem; }
-.kmp-history-row { display: flex; justify-content: space-between; font-size: 0.8rem; padding: 8px 0; border-bottom: 1px solid #262626; gap: 10px; flex-wrap: wrap; }
-.kmp-tag { padding: 1px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 600; }
+
+.kmp-builder { background: var(--card-bg, #151515); border: 1px solid var(--border, #262626); border-radius: 16px; padding: 22px; margin-bottom: 16px; }
+.kmp-builder-header { margin-bottom: 18px; }
+.kmp-builder-header h2 { font-size: 1.15rem; margin: 0 0 4px; display:flex; align-items:center; gap:8px; }
+.kmp-section { margin-bottom: 22px; padding-bottom: 20px; border-bottom: 1px solid #232323; }
+.kmp-section:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.kmp-section-title { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: #777; margin-bottom: 12px; font-weight: 600; }
+
+.kmp-field { margin-bottom: 12px; }
+.kmp-field label { display:block; font-size: 0.82rem; color: #aaa; margin-bottom: 6px; }
+.kmp-field input, .kmp-field select, .kmp-field textarea {
+  width: 100%; background: #1a1a1a; border: 1px solid #333; color: #f2f2f2;
+  border-radius: 10px; padding: 11px 13px; font-size: 0.9rem; box-sizing: border-box; transition: border-color .15s;
+}
+.kmp-field input:focus, .kmp-field select:focus, .kmp-field textarea:focus { border-color: #666; outline: none; }
+.kmp-field textarea { resize: vertical; min-height: 60px; }
+
+.kmp-service-row {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  background: #181818; border: 1px solid #262626; border-radius: 12px; margin-bottom: 8px; transition: opacity .15s;
+}
+.kmp-service-row.off { opacity: 0.45; }
+.kmp-service-icon { font-size: 1.2rem; width: 26px; text-align: center; }
+.kmp-service-info { flex: 1; min-width: 0; }
+.kmp-service-name { font-weight: 600; font-size: 0.88rem; }
+.kmp-service-qty { font-size: 0.78rem; color: #888; margin-top: 2px; }
+.kmp-service-qty strong { color: #ddd; }
+
+.kmp-switch { position: relative; width: 42px; height: 24px; flex-shrink: 0; }
+.kmp-switch input { opacity: 0; width: 0; height: 0; }
+.kmp-switch .slider { position: absolute; inset: 0; background: #333; border-radius: 999px; cursor: pointer; transition: background .15s; }
+.kmp-switch .slider::before { content: ""; position: absolute; height: 18px; width: 18px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform .15s; }
+.kmp-switch input:checked + .slider { background: #34d399; }
+.kmp-switch input:checked + .slider::before { transform: translateX(18px); }
+
+.kmp-views-badge { display: inline-flex; align-items:center; gap:6px; background:#052e2e; color:#22d3ee; padding: 3px 10px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; margin-bottom: 10px; }
+
+.kmp-summary { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 14px 16px; }
+.kmp-summary-row { display: flex; justify-content: space-between; font-size: 0.85rem; padding: 6px 0; }
+.kmp-summary-row.total { border-top: 1px solid #2a2a2a; margin-top: 6px; padding-top: 10px; font-weight: 700; font-size: 0.95rem; }
+.kmp-summary-row .muted { color: #888; }
+.kmp-summary-row.negative { color: #f87171; }
+
+.kmp-place-btn {
+  width: 100%; margin-top: 16px; background: linear-gradient(135deg,#f2f2f2,#d8d8d8); color: #0a0a0a;
+  border: none; border-radius: 12px; padding: 14px; font-weight: 700; font-size: 0.95rem; cursor: pointer;
+}
+.kmp-place-btn:disabled { opacity: 0.5; cursor: default; }
+.kmp-error { color: #f87171; font-size: 0.82rem; margin: 8px 0 0; }
+.kmp-success { color: #34d399; font-size: 0.85rem; margin: 8px 0 0; }
+
+.kmp-history-row { display: flex; justify-content: space-between; font-size: 0.8rem; padding: 9px 0; border-bottom: 1px solid #232323; gap: 10px; flex-wrap: wrap; }
+.kmp-tag { padding: 1px 8px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; }
 .kmp-tag.auto { background: #052e2e; color: #22d3ee; }
 .kmp-tag.manual { background: #2e2005; color: #fbbf24; }
+.kmp-empty { color: #666; font-size: 0.82rem; padding: 10px 0; }
+
+@media (max-width: 480px) {
+  .kmp-builder { padding: 16px; border-radius: 12px; }
+  .kmp-service-row { padding: 10px; }
+}
