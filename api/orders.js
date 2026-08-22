@@ -4,32 +4,41 @@ const { getLimiters, getClientIp } = require("../lib/ratelimit");
 
 const ENGAGEMENT_TYPES = ["likes", "shares", "saves", "reposts", "comments"];
 
-// Estimates cost from configured customer_rate mappings, honoring which
-// engagement services the customer left ON. Disabled services never enter
-// the calculation, the leg generation, or the provider placement.
-async function estimateCost(supabase, viewsQuantity, ratios, enabledServices) {
-  const quantities = { views: viewsQuantity };
+// Same per-mode variance bounds as render-auto-engine/offsets.js MODE_PRESETS
+// — kept in sync intentionally (Render can't be required from Vercel).
+// This is the ONLY place order-to-order variance is decided; Render never
+// re-randomizes these totals, it only distributes them across legs.
+const MODE_VARIANCE_PERCENT = { viral: 18, fast: 10, trending: 14, slow: 8 };
+
+function jitter(base, variancePercent) {
+  const factor = 1 + (Math.random() * 2 - 1) * (variancePercent / 100);
+  return Math.max(1, Math.round(base * factor));
+}
+
+// Computes the authoritative, ALREADY-VARIED quantity for every enabled
+// engagement type, exactly once. This exact number is what gets billed AND
+// what Render will deliver — never recalculated anywhere else.
+function computeTargetQuantities(viewsQuantity, ratios, enabledMap, mode) {
+  const variance = MODE_VARIANCE_PERCENT[mode] || 15;
+  const targets = {};
   for (const r of ratios) {
-    if (enabledServices && enabledServices[r.service_type] === false) continue; // explicitly OFF
-    quantities[r.service_type] = Math.round(viewsQuantity * Number(r.ratio));
+    if (enabledMap && enabledMap[r.service_type] === false) continue;
+    const base = viewsQuantity * Number(r.ratio);
+    targets[r.service_type] = jitter(base, variance);
   }
+  return targets;
+}
 
+async function estimateCost(supabase, viewsQuantity, targetQuantities) {
   let total = 0;
-  for (const serviceType of Object.keys(quantities)) {
-    const { data: mapping } = await supabase
-      .from("service_mapping")
-      .select("customer_rate")
-      .eq("service_type", serviceType)
-      .eq("active", true)
-      .order("display_order", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+  const { data: viewsMapping } = await supabase.from("service_mapping").select("customer_rate").eq("service_type", "views").eq("active", true).order("display_order", { ascending: true }).limit(1).maybeSingle();
+  if (viewsMapping && viewsMapping.customer_rate) total += (viewsQuantity / 1000) * Number(viewsMapping.customer_rate);
 
-    if (mapping && mapping.customer_rate) {
-      total += (quantities[serviceType] / 1000) * Number(mapping.customer_rate);
-    }
+  for (const serviceType of Object.keys(targetQuantities)) {
+    const { data: mapping } = await supabase.from("service_mapping").select("customer_rate").eq("service_type", serviceType).eq("active", true).order("display_order", { ascending: true }).limit(1).maybeSingle();
+    if (mapping && mapping.customer_rate) total += (targetQuantities[serviceType] / 1000) * Number(mapping.customer_rate);
   }
-  return { total: Math.round(total * 100) / 100, quantities };
+  return Math.round(total * 100) / 100;
 }
 
 module.exports = async (req, res) => {
@@ -51,15 +60,14 @@ module.exports = async (req, res) => {
         const { data: mapping } = await supabase.from("service_mapping").select("customer_rate").eq("service_type", t).eq("active", true).order("display_order", { ascending: true }).limit(1).maybeSingle();
         rates[t] = mapping ? Number(mapping.customer_rate) || 0 : 0;
       }
-
-      return res.status(200).json({ success: true, ratios: data, rates });
+      return res.status(200).json({ success: true, ratios: data, rates, modeVariance: MODE_VARIANCE_PERCENT });
     }
 
     const orderId = req.query && req.query.id;
     if (orderId) {
       const { data: order, error } = await supabase
         .from("orders")
-        .select("id, order_name, platform, link, mode, views_quantity, customer_cost, delivered_views, status, enabled_services, comment_text, created_at, updated_at")
+        .select("id, order_name, platform, link, mode, views_quantity, customer_cost, delivered_views, status, enabled_services, target_quantities, comment_text, created_at, updated_at")
         .eq("id", orderId)
         .eq("device_id", session.deviceId)
         .maybeSingle();
@@ -84,7 +92,7 @@ module.exports = async (req, res) => {
   const { success: notLimited } = await general.limit(getClientIp(req));
   if (!notLimited) return res.status(429).json({ success: false, error: "Too many attempts. Try again later." });
 
-  const { orderName, platform, link, mode, viewsQuantity, enabledServices, commentText } = req.body || {};
+  const { orderName, platform, link, mode, viewsQuantity, enabledServices, commentText, idempotencyKey } = req.body || {};
 
   if (!["instagram", "tiktok", "youtube"].includes(platform)) {
     return res.status(400).json({ success: false, error: "Invalid platform." });
@@ -98,7 +106,22 @@ module.exports = async (req, res) => {
     return res.status(400).json({ success: false, error: "Invalid views quantity." });
   }
 
-  // Sanitize the enabledServices map — only known keys, boolean values.
+  // ---------- IDEMPOTENCY: replay-safe ----------
+  // If this exact (device, idempotencyKey) already produced an order, return
+  // that SAME order instead of creating a new one. Handles double-fires from
+  // network retries, not just client-side double-clicks.
+  if (idempotencyKey && typeof idempotencyKey === "string") {
+    const { data: existing } = await supabase
+      .from("orders")
+      .select("id, customer_cost")
+      .eq("device_id", session.deviceId)
+      .eq("idempotency_key", idempotencyKey)
+      .maybeSingle();
+    if (existing) {
+      return res.status(200).json({ success: true, orderId: existing.id, customerCost: existing.customer_cost, replay: true });
+    }
+  }
+
   let enabledMap = null;
   if (enabledServices && typeof enabledServices === "object") {
     enabledMap = {};
@@ -122,7 +145,8 @@ module.exports = async (req, res) => {
   }
 
   const { data: ratios } = await supabase.from("engagement_ratios").select("service_type, ratio");
-  const { total: customerCost } = await estimateCost(supabase, qty, ratios || [], enabledMap);
+  const targetQuantities = computeTargetQuantities(qty, ratios || [], enabledMap, modeVal);
+  const customerCost = await estimateCost(supabase, qty, targetQuantities);
 
   const { data: deviceRow } = await supabase.from("devices").select("wallet_balance").eq("device_id", session.deviceId).maybeSingle();
   const currentBalance = deviceRow ? Number(deviceRow.wallet_balance) : 0;
@@ -141,12 +165,23 @@ module.exports = async (req, res) => {
       views_quantity: qty,
       customer_cost: customerCost,
       enabled_services: enabledMap,
+      target_quantities: targetQuantities,
       comment_text: commentTextVal,
+      idempotency_key: idempotencyKey || null,
       status: "pending",
     })
     .select("id")
     .single();
-  if (orderError) return res.status(500).json({ success: false, error: "Could not create order.", retryable: true });
+
+  if (orderError) {
+    // Unique-index race: two near-simultaneous requests with the same key —
+    // the loser here just means the winner already created it. Return that one.
+    if (String(orderError.code) === "23505" && idempotencyKey) {
+      const { data: existing } = await supabase.from("orders").select("id, customer_cost").eq("device_id", session.deviceId).eq("idempotency_key", idempotencyKey).maybeSingle();
+      if (existing) return res.status(200).json({ success: true, orderId: existing.id, customerCost: existing.customer_cost, replay: true });
+    }
+    return res.status(500).json({ success: false, error: "Could not create order.", retryable: true });
+  }
 
   const { error: holdError } = await supabase.from("wallet_holds").insert({ device_id: session.deviceId, order_id: order.id, amount: customerCost, status: "held" });
   if (holdError) {
@@ -157,7 +192,7 @@ module.exports = async (req, res) => {
   await supabase.from("engine_logs").insert({
     order_id: order.id,
     event_type: "order_created",
-    details: { platform, link, mode: modeVal, viewsQuantity: qty, customerCost, enabledServices: enabledMap },
+    details: { platform, link, mode: modeVal, viewsQuantity: qty, customerCost, targetQuantities },
   });
 
   return res.status(200).json({ success: true, orderId: order.id, customerCost });

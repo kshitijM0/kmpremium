@@ -38,6 +38,18 @@
 
 .kmp-views-badge { display: inline-flex; align-items:center; gap:6px; background:#052e2e; color:#22d3ee; padding: 3px 10px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; margin-bottom: 10px; }
 
+.kmp-graph-wrap { position: relative; background: #141414; border: 1px solid #262626; border-radius: 12px; padding: 12px; }
+.kmp-graph-note { font-size: 0.74rem; color: #777; margin-top: 8px; }
+.kmp-graph-legend { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; font-size: 0.74rem; color: #aaa; }
+.kmp-graph-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.kmp-graph-legend i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.kmp-tooltip {
+  position: absolute; background: #0a0a0a; border: 1px solid #333; border-radius: 8px; padding: 8px 10px;
+  font-size: 0.75rem; pointer-events: none; display: none; z-index: 5; white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,.4);
+}
+.kmp-tooltip .t-time { color: #888; margin-bottom: 4px; }
+.kmp-tooltip .t-row { display: flex; justify-content: space-between; gap: 12px; }
+
 .kmp-summary { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 12px; padding: 14px 16px; }
 .kmp-summary-row { display: flex; justify-content: space-between; font-size: 0.85rem; padding: 6px 0; }
 .kmp-summary-row.total { border-top: 1px solid #2a2a2a; margin-top: 6px; padding-top: 10px; font-weight: 700; font-size: 0.95rem; }
@@ -61,4 +73,5 @@
 @media (max-width: 480px) {
   .kmp-builder { padding: 16px; border-radius: 12px; }
   .kmp-service-row { padding: 10px; }
+  .kmp-tooltip { font-size: 0.7rem; }
 }
