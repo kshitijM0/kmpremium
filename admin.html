@@ -9,22 +9,18 @@
   body {
     margin: 0; min-height: 100vh; background: #0a0a0a; color: #f2f2f2;
     font-family: -apple-system, Segoe UI, Roboto, sans-serif;
-    padding: 24px;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
   }
-  .login-wrap { display: flex; align-items: center; justify-content: center; min-height: 80vh; }
   .box { background: #151515; border: 1px solid #262626; border-radius: 14px; padding: 24px; width: 100%; max-width: 420px; }
   h1 { font-size: 1.15rem; margin: 0 0 16px; }
-  h2 { font-size: 1rem; margin: 26px 0 12px; color: #ddd; }
   input, select { width: 100%; background: #1e1e1e; border: 1px solid #333; color: #f2f2f2; border-radius: 8px; padding: 10px 12px; font-size: 0.9rem; margin-bottom: 10px; }
   button { width: 100%; background: #f2f2f2; color: #0a0a0a; border: none; border-radius: 8px; padding: 10px 12px; font-weight: 600; font-size: 0.9rem; cursor: pointer; }
   button.secondary { background: transparent; color: #34d399; border: 1px solid #34d399; }
   button.danger { background: transparent; color: #f87171; border: 1px solid #f87171; }
-  button.walletbtn { background: transparent; color: #60a5fa; border: 1px solid #60a5fa; }
   .error { color: #f87171; font-size: 0.85rem; margin: -4px 0 10px; }
-  .panel-wide { max-width: 900px; width: 100%; margin: 0 auto; }
-  .card { background: #151515; border: 1px solid #262626; border-radius: 14px; padding: 18px; margin-bottom: 20px; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
-  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #262626; white-space: nowrap; }
+  .panel-wide { max-width: 760px; width: 100%; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #262626; }
   th { color: #999; font-weight: 500; }
   .mono { font-family: monospace; }
   .row { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
@@ -32,58 +28,35 @@
   .row button { width: auto; padding: 10px 16px; }
   .actions button { width: auto; padding: 4px 8px; font-size: 0.78rem; margin-right: 6px; }
   .empty { text-align: center; color: #777; padding: 20px; }
-  .table-wrap { overflow-x: auto; }
-  .muted { color: #666; }
-  a.ss-link { color: #60a5fa; }
 </style>
 </head>
 <body>
 
-<div id="loginBox" class="login-wrap">
-  <div class="box">
-    <h1>Admin login</h1>
-    <input id="passwordInput" type="password" placeholder="Password">
-    <div id="loginError" class="error" style="display:none;"></div>
-    <button id="loginBtn">Log in</button>
-  </div>
+<div id="loginBox" class="box">
+  <h1>Admin login</h1>
+  <input id="passwordInput" type="password" placeholder="Password">
+  <div id="loginError" class="error" style="display:none;"></div>
+  <button id="loginBtn">Log in</button>
 </div>
 
-<div id="adminBox" class="panel-wide" style="display:none;">
-
-  <div class="card">
-    <h1>Key admin</h1>
-    <div class="row">
-      <select id="durationSelect">
-        <option value="60">1 hour</option>
-        <option value="1440" selected>24 hours</option>
-        <option value="2880">48 hours</option>
-        <option value="10080">7 days</option>
-        <option value="43200">30 days</option>
-      </select>
-      <button id="generateBtn" class="secondary">Generate key</button>
-    </div>
-    <div class="table-wrap">
-    <table>
-      <thead>
-        <tr><th>Key</th><th>Status</th><th>Source</th><th>Wallet (device)</th><th>Expires</th><th>Actions</th></tr>
-      </thead>
-      <tbody id="keysTableBody"></tbody>
-    </table>
-    </div>
+<div id="adminBox" class="box panel-wide" style="display:none;">
+  <h1>Key admin</h1>
+  <div class="row">
+    <select id="durationSelect">
+      <option value="60">1 hour</option>
+      <option value="1440" selected>24 hours</option>
+      <option value="2880">48 hours</option>
+      <option value="10080">7 days</option>
+      <option value="43200">30 days</option>
+    </select>
+    <button id="generateBtn" class="secondary">Generate key</button>
   </div>
-
-  <div class="card">
-    <h2 style="margin-top:0;">Pending UPI Deposits</h2>
-    <div class="table-wrap">
-    <table>
-      <thead>
-        <tr><th>Amount</th><th>UTR</th><th>Screenshot</th><th>Submitted</th><th>Actions</th></tr>
-      </thead>
-      <tbody id="depositsTableBody"></tbody>
-    </table>
-    </div>
-  </div>
-
+  <table>
+    <thead>
+      <tr><th>Key</th><th>Status</th><th>Source</th><th>Expires</th><th>Actions</th></tr>
+    </thead>
+    <tbody id="keysTableBody"></tbody>
+  </table>
 </div>
 
 <script>
@@ -92,7 +65,7 @@
   const loginError = document.getElementById('loginError');
 
   async function loadKeys() {
-    const res = await fetch('/api/admin/keys');
+    const res = await fetch('/api/admin/list-keys');
     if (!res.ok) return false;
     const data = await res.json();
     renderKeys(data.keys || []);
@@ -104,7 +77,7 @@
   function renderKeys(keys) {
     const body = document.getElementById('keysTableBody');
     if (!keys.length) {
-      body.innerHTML = '<tr><td colspan="6" class="empty">No keys yet.</td></tr>';
+      body.innerHTML = '<tr><td colspan="5" class="empty">No keys yet.</td></tr>';
       return;
     }
     body.innerHTML = keys.map(k => `
@@ -112,39 +85,10 @@
         <td class="mono">${k.key_value}</td>
         <td>${k.status}</td>
         <td>${k.source}</td>
-        <td class="mono">${k.wallet_balance === null ? '<span class="muted">no device yet</span>' : '₹' + Number(k.wallet_balance).toFixed(2)}</td>
         <td>${new Date(k.expires_at).toLocaleString()}</td>
         <td class="actions">
           <button class="secondary" data-action="reload" data-id="${k.id}" ${k.status !== 'active' ? 'disabled' : ''}>Reload</button>
           <button class="danger" data-action="revoke" data-id="${k.id}" ${k.status !== 'active' ? 'disabled' : ''}>Revoke</button>
-          <button class="walletbtn" data-action="wallet" data-id="${k.id}" data-key="${k.key_value}" ${!k.device_id ? 'disabled title="No device linked yet"' : ''}>Adjust ₹</button>
-        </td>
-      </tr>
-    `).join('');
-  }
-
-  async function loadDeposits() {
-    const res = await fetch('/api/admin/wallet');
-    if (!res.ok) return;
-    const data = await res.json();
-    renderDeposits(data.deposits || []);
-  }
-
-  function renderDeposits(deposits) {
-    const body = document.getElementById('depositsTableBody');
-    if (!deposits.length) {
-      body.innerHTML = '<tr><td colspan="5" class="empty">No pending deposits.</td></tr>';
-      return;
-    }
-    body.innerHTML = deposits.map(d => `
-      <tr>
-        <td>₹${Number(d.amount).toFixed(2)}</td>
-        <td class="mono">${d.gateway_reference || '—'}</td>
-        <td>${d.screenshot_url ? `<a class="ss-link" href="${d.screenshot_url}" target="_blank">View</a>` : '—'}</td>
-        <td>${new Date(d.created_at).toLocaleString()}</td>
-        <td class="actions">
-          <button class="secondary" data-action="approve" data-id="${d.id}">Approve</button>
-          <button class="danger" data-action="reject" data-id="${d.id}">Reject</button>
         </td>
       </tr>
     `).join('');
@@ -153,14 +97,13 @@
   document.getElementById('loginBtn').addEventListener('click', async () => {
     loginError.style.display = 'none';
     const password = document.getElementById('passwordInput').value;
-    const res = await fetch('/api/admin/auth', {
+    const res = await fetch('/api/admin/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'login', password })
+      body: JSON.stringify({ password })
     });
     if (res.ok) {
       await loadKeys();
-      await loadDeposits();
     } else {
       const data = await res.json().catch(() => ({}));
       loginError.textContent = data.error || 'Login failed.';
@@ -170,10 +113,10 @@
 
   document.getElementById('generateBtn').addEventListener('click', async () => {
     const durationMinutes = Number(document.getElementById('durationSelect').value);
-    await fetch('/api/admin/keys', {
+    await fetch('/api/admin/generate-key', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'generate', durationMinutes })
+      body: JSON.stringify({ durationMinutes })
     });
     await loadKeys();
   });
@@ -183,64 +126,17 @@
     if (!btn) return;
     const id = btn.dataset.id;
     const action = btn.dataset.action;
-
-    if (action === 'wallet') {
-      const amountStr = prompt(`Adjust wallet for the device linked to ${btn.dataset.key}\n\nEnter amount (use negative to deduct, e.g. -50):`);
-      if (amountStr === null) return;
-      const amount = Number(amountStr);
-      if (!Number.isFinite(amount) || amount === 0) { alert('Invalid amount.'); return; }
-      const res = await fetch('/api/admin/wallet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'adjust', keyId: id, amount, description: 'Manual admin adjustment' })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) { alert(data.error || 'Failed to adjust balance.'); return; }
-      await loadKeys();
-      return;
-    }
-
-    const mapped = action === 'reload' ? 'reload' : 'revoke';
-    await fetch('/api/admin/keys', {
+    const endpoint = action === 'reload' ? '/api/admin/reload-key' : '/api/admin/revoke-key';
+    await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: mapped, id })
+      body: JSON.stringify({ id })
     });
     await loadKeys();
   });
 
-  document.getElementById('depositsTableBody').addEventListener('click', async (e) => {
-    const btn = e.target.closest('button[data-action]');
-    if (!btn) return;
-    const transactionId = btn.dataset.id;
-    const action = btn.dataset.action;
-
-    if (action === 'approve') {
-      if (!confirm('Approve this deposit and credit the wallet?')) return;
-      const res = await fetch('/api/admin/wallet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'approve-deposit', transactionId })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) { alert(data.error || 'Failed to approve.'); return; }
-    } else if (action === 'reject') {
-      const reason = prompt('Rejection reason (optional):') || '';
-      const res = await fetch('/api/admin/wallet', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'reject-deposit', transactionId, reason })
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) { alert(data.error || 'Failed to reject.'); return; }
-    }
-
-    await loadDeposits();
-    await loadKeys();
-  });
-
+  // If already logged in (valid cookie), skip straight to panel.
   loadKeys();
-  loadDeposits();
 </script>
 </body>
 </html>

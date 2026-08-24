@@ -1,7 +1,5 @@
 const { getSupabaseAdmin } = require("../lib/supabase");
 const { getLimiters, getClientIp } = require("../lib/ratelimit");
-const { createSessionValue, SESSION_COOKIE, SESSION_TTL_SECONDS } = require("../lib/keySession");
-const { serializeCookie } = require("../lib/cookies");
 
 module.exports = async (req, res) => {
   if (req.method !== "POST") return res.status(405).json({ valid: false, error: "Method not allowed." });
@@ -38,25 +36,12 @@ module.exports = async (req, res) => {
 
   if (!data.device_id) {
     await supabase.from("keys").update({ device_id: deviceId }).eq("id", data.id);
-  } else if (data.device_id !== deviceId) {
-    return res.status(200).json({ valid: false, error: "This key is already in use on another device." });
+    return res.status(200).json({ valid: true });
   }
 
-  // Ensure the device's wallet row exists (no-op if it already does) —
-  // wallet_balance stays whatever it already was for this device.
-  await supabase
-    .from("devices")
-    .upsert({ device_id: deviceId }, { onConflict: "device_id", ignoreDuplicates: true });
-
-  res.setHeader(
-    "Set-Cookie",
-    serializeCookie(SESSION_COOKIE, createSessionValue(data.id, deviceId), {
-      httpOnly: true,
-      secure: true,
-      sameSite: "Strict",
-      maxAge: SESSION_TTL_SECONDS,
-    })
-  );
+  if (data.device_id !== deviceId) {
+    return res.status(200).json({ valid: false, error: "This key is already in use on another device." });
+  }
 
   return res.status(200).json({ valid: true });
 };

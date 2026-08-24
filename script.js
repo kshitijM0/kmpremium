@@ -608,7 +608,7 @@ function createServiceSlot() {
       ? filtered
           .map(
             (svc) => `
-            <div class="service-option" data-id="${svc.id}" data-rate="${svc.rate}" data-name="${svc.name}" data-min="${svc.min}" data-max="${svc.max}">
+            <div class="service-option" data-id="${svc.id}" data-rate="${svc.rate}" data-name="${svc.name}" data-min="${svc.min}" data-max="${svc.max}" data-base-url="${encodeURIComponent(svc._baseUrl || "")}">
               <span class="opt-id">#${svc.id}</span>${svc.name}
               <span class="opt-rate">$${formatRate(svc.rate)}/1000</span>
               <br><span class="opt-limits">Min ${svc.min.toLocaleString()} · Max ${svc.max.toLocaleString()}</span>
@@ -620,11 +620,14 @@ function createServiceSlot() {
     dropdown.classList.add("open");
   }
 
-  function selectService(id, rate, name, min, max) {
+  function selectService(id, rate, name, min, max, baseUrl) {
     card.dataset.selectedServiceId = id;
     card.dataset.selectedRate = rate;
     card.dataset.selectedMin = min;
     card.dataset.selectedMax = max;
+    card._selectedProvider = {
+      baseUrl: baseUrl ? decodeURIComponent(baseUrl) : "",
+    };
     searchInput.value = `#${id} — ${name}`;
     noteEl.innerHTML = `Selected: ${name} · $${formatRate(rate)}/1000<br><b>Min ${parseInt(min).toLocaleString()} · Max ${parseInt(max).toLocaleString()}</b>`;
     noteEl.classList.add("filled");
@@ -642,7 +645,14 @@ function createServiceSlot() {
   dropdown.addEventListener("click", (e) => {
     const opt = e.target.closest(".service-option");
     if (!opt || !opt.dataset.id) return;
-    selectService(opt.dataset.id, opt.dataset.rate, opt.dataset.name, opt.dataset.min, opt.dataset.max);
+    selectService(
+      opt.dataset.id,
+      opt.dataset.rate,
+      opt.dataset.name,
+      opt.dataset.min,
+      opt.dataset.max,
+      opt.dataset.baseUrl || ""
+    );
   });
 
   categorySelect.addEventListener("change", () => {
@@ -650,6 +660,7 @@ function createServiceSlot() {
     card.dataset.selectedRate = "0";
     card.dataset.selectedMin = "1";
     card.dataset.selectedMax = "1000000";
+    card._selectedProvider = null;
     searchInput.value = "";
     noteEl.textContent = "No service selected yet";
     noteEl.classList.remove("filled");
@@ -1272,11 +1283,29 @@ function updateCardPreview(card) {
     legs = generateLegs(quantity, durationHours, randomness, curvePoints, minQty);
   }
 
+  const selectedServiceId = String(card.dataset.selectedServiceId || "");
+  const selectedBaseUrl = card._selectedProvider?.baseUrl || "";
+  let selectedProvider = card._selectedProvider || {};
+
+  if (selectedBaseUrl) {
+    const candidates = (CATALOG[category] || []).filter((svc) =>
+      String(svc.id) === selectedServiceId && String(svc._baseUrl || "") === selectedBaseUrl
+    );
+    if (candidates[0]) {
+      selectedProvider = {
+        baseUrl: candidates[0]._baseUrl || selectedBaseUrl,
+        apiKey: candidates[0]._apiKey || "",
+      };
+    }
+  }
+
   legs = legs.map((l) => ({
     ...l,
     serviceLabel,
     category,
-    serviceId: card.dataset.selectedServiceId,
+    serviceId: selectedServiceId,
+    baseUrl: selectedProvider.baseUrl || "",
+    apiKey: selectedProvider.apiKey || "",
   }));
   card._lastLegs = legs;
 
@@ -1553,6 +1582,8 @@ submitOrderBtn.addEventListener("click", async () => {
           quantity: leg.amount,
           category,
           serviceLabel,
+          baseUrl: leg.baseUrl || "",
+          apiKey: leg.apiKey || "",
           fireInMs: leg.minutesAt * 60000,
         });
       });
