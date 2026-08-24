@@ -2,8 +2,8 @@ const { getLimiters, getClientIp } = require("../../lib/ratelimit");
 const {
   createSessionValue,
   verifyAdminPassword,
-  ADMIN_COOKIE_NAME,
-  ADMIN_COOKIE_MAX_AGE_SECONDS,
+  SESSION_COOKIE,
+  SESSION_TTL_SECONDS,
 } = require("../../lib/adminSession");
 const { serializeCookie } = require("../../lib/cookies");
 
@@ -14,7 +14,7 @@ module.exports = async (req, res) => {
   if (action === "logout") {
     res.setHeader(
       "Set-Cookie",
-      serializeCookie(ADMIN_COOKIE_NAME, "", { httpOnly: true, secure: true, sameSite: "Strict", maxAge: 0 })
+      serializeCookie(SESSION_COOKIE, "", { httpOnly: true, secure: true, sameSite: "Strict", maxAge: 0 })
     );
     return res.status(200).json({ ok: true });
   }
@@ -35,7 +35,7 @@ module.exports = async (req, res) => {
 
   res.setHeader(
     "Set-Cookie",
-    serializeCookie(ADMIN_COOKIE_NAME, createSessionValue(), {
+    serializeCookie(SESSION_COOKIE, createSessionValue(), {
       httpOnly: true,
       secure: true,
       sameSite: "Strict",

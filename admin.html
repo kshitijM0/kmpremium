@@ -65,7 +65,7 @@
   const loginError = document.getElementById('loginError');
 
   async function loadKeys() {
-    const res = await fetch('/api/admin/list-keys');
+    const res = await fetch('/api/admin/keys');
     if (!res.ok) return false;
     const data = await res.json();
     renderKeys(data.keys || []);
@@ -97,7 +97,7 @@
   document.getElementById('loginBtn').addEventListener('click', async () => {
     loginError.style.display = 'none';
     const password = document.getElementById('passwordInput').value;
-    const res = await fetch('/api/admin/login', {
+    const res = await fetch('/api/admin/auth', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ password })
@@ -113,10 +113,10 @@
 
   document.getElementById('generateBtn').addEventListener('click', async () => {
     const durationMinutes = Number(document.getElementById('durationSelect').value);
-    await fetch('/api/admin/generate-key', {
+    await fetch('/api/admin/keys', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ durationMinutes })
+      body: JSON.stringify({ action: 'generate', durationMinutes })
     });
     await loadKeys();
   });
@@ -126,11 +126,11 @@
     if (!btn) return;
     const id = btn.dataset.id;
     const action = btn.dataset.action;
-    const endpoint = action === 'reload' ? '/api/admin/reload-key' : '/api/admin/revoke-key';
+    const endpoint = action === 'reload' ? '/api/admin/keys' : '/api/admin/keys';
     await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id })
+      body: JSON.stringify({ action, id })
     });
     await loadKeys();
   });

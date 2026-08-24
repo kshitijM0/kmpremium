@@ -109,7 +109,7 @@
   let servicesCache = [];
 
   async function boot() {
-    const res = await fetch('/api/auto/providers');
+    const res = await fetch('/api/auto?route=providers');
     if (res.ok) {
       loginBox.style.display = 'none';
       mainPanel.style.display = 'block';
@@ -138,7 +138,7 @@
   });
 
   async function loadProviders() {
-    const res = await fetch('/api/auto/providers', { credentials: 'include' });
+    const res = await fetch('/api/auto?route=providers', { credentials: 'include' });
     const data = await res.json();
     providersCache = data.providers || [];
     renderProviders();
@@ -176,7 +176,7 @@
     const errEl = document.getElementById('providerFormError');
     errEl.style.display = 'none';
 
-    const res = await fetch('/api/auto/providers', {
+    const res = await fetch('/api/auto?route=providers', {
       method: 'POST',
       credentials: 'include',
       headers: {'Content-Type':'application/json'},
@@ -203,7 +203,7 @@
     if (action === 'test') {
       btn.textContent = 'Testing...';
       btn.disabled = true;
-      const res = await fetch('/api/auto/providers', {
+      const res = await fetch('/api/auto?route=providers', {
         method: 'POST',
         credentials: 'include',
         headers: {'Content-Type':'application/json'},
@@ -216,7 +216,7 @@
     } else if (action === 'fetch-services') {
       btn.textContent = 'Fetching...';
       btn.disabled = true;
-      const res = await fetch('/api/auto/providers', {
+      const res = await fetch('/api/auto?route=providers', {
         method: 'POST',
         credentials: 'include',
         headers: {'Content-Type':'application/json'},
@@ -236,7 +236,7 @@
 
     } else if (action === 'toggle') {
       const newStatus = btn.dataset.status === 'active' ? 'disabled' : 'active';
-      await fetch('/api/auto/providers', {
+      await fetch('/api/auto?route=providers', {
         method: 'POST',
         credentials: 'include',
         headers: {'Content-Type':'application/json'},
@@ -245,7 +245,7 @@
       await loadProviders();
 
     } else if (action === 'duplicate') {
-      await fetch('/api/auto/providers', {
+      await fetch('/api/auto?route=providers', {
         method: 'POST',
         credentials: 'include',
         headers: {'Content-Type':'application/json'},
@@ -255,7 +255,7 @@
 
     } else if (action === 'delete') {
       if (!confirm('Delete this provider and all its mappings?')) return;
-      await fetch('/api/auto/providers', {
+      await fetch('/api/auto?route=providers', {
         method: 'POST',
         credentials: 'include',
         headers: {'Content-Type':'application/json'},
@@ -308,7 +308,7 @@
 
     try {
       const res = await fetch(
-        '/api/auto/services?providerId=' + encodeURIComponent(providerId),
+        '/api/auto?route=services&providerId=' + encodeURIComponent(providerId),
         { credentials: 'include' }
       );
 
@@ -367,7 +367,7 @@ async function searchServices() {
   }
 
   const res = await fetch(
-    '/api/auto/services?providerId=' +
+    '/api/auto?route=services&providerId=' +
       encodeURIComponent(providerId) +
       '&search=' +
       encodeURIComponent(keyword),
@@ -403,7 +403,7 @@ async function searchServices() {
       return;
     }
 
-    const res = await fetch('/api/auto/mapping', {
+    const res = await fetch('/api/auto?route=mapping', {
       method: 'POST',
       credentials: 'include',
       headers: {'Content-Type':'application/json'},
@@ -430,7 +430,7 @@ async function searchServices() {
 
   async function loadMapping() {
     const res = await fetch(
-      '/api/auto/mapping?serviceType=' + encodeURIComponent(currentType),
+      '/api/auto?route=mapping?serviceType=' + encodeURIComponent(currentType),
       { credentials: 'include' }
     );
     const data = await res.json();
@@ -471,7 +471,7 @@ async function searchServices() {
     if (action === 'remove') {
       if (!confirm('Remove this mapping?')) return;
 
-      await fetch('/api/auto/mapping', {
+      await fetch('/api/auto?route=mapping', {
         method: 'POST',
         credentials: 'include',
         headers: {'Content-Type':'application/json'},
@@ -491,7 +491,7 @@ async function searchServices() {
 
     [ids[idx], ids[swapWith]] = [ids[swapWith], ids[idx]];
 
-    await fetch('/api/auto/mapping', {
+    await fetch('/api/auto?route=mapping', {
       method: 'POST',
       credentials: 'include',
       headers: {'Content-Type':'application/json'},
