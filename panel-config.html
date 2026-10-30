@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KM Panel — Panel Services</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: #0a0a0a; color: #f2f2f2; font-family: -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; }
+  .center-box { max-width: 420px; margin: 80px auto; background: #151515; border: 1px solid #262626; border-radius: 14px; padding: 24px; }
+  h1 { font-size: 1.2rem; margin: 0 0 6px; }
+  h2 { font-size: 1rem; margin: 0 0 12px; color: #ddd; }
+  p.hint { color: #888; font-size: 0.82rem; margin: 0 0 16px; line-height: 1.5; }
+  input, select { background: #1e1e1e; border: 1px solid #333; color: #f2f2f2; border-radius: 8px; padding: 8px 10px; font-size: 0.85rem; }
+  input.wide, select.wide { width: 100%; margin-bottom: 8px; }
+  button { background: #f2f2f2; color: #0a0a0a; border: none; border-radius: 8px; padding: 8px 14px; font-weight: 600; font-size: 0.82rem; cursor: pointer; }
+  button.ghost { background: transparent; color: #999; border: 1px solid #444; padding: 4px 8px; }
+  button.danger { background: transparent; color: #f87171; border: 1px solid #f87171; padding: 4px 8px; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .error { color: #f87171; font-size: 0.82rem; }
+  .ok { color: #34d399; font-size: 0.82rem; }
+  .panel { max-width: 1000px; margin: 0 auto; }
+  .card { background: #151515; border: 1px solid #262626; border-radius: 14px; padding: 18px; margin-bottom: 20px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tabs button { background: #1e1e1e; color: #ccc; border: 1px solid #333; }
+  .tabs button.active { background: #f2f2f2; color: #0a0a0a; }
+  .svc-list { max-height: 360px; overflow-y: auto; border: 1px solid #262626; border-radius: 10px; }
+  .svc-row { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-bottom: 1px solid #1f1f1f; font-size: 0.8rem; cursor: pointer; }
+  .svc-row:hover { background: #1b1b1b; }
+  .svc-row input { margin-top: 2px; }
+  .svc-meta { color: #888; font-size: 0.72rem; margin-top: 2px; }
+  .mono { font-family: monospace; }
+  .empty { text-align: center; color: #777; padding: 16px; font-size: 0.85rem; }
+  .saved-host { border: 1px solid #262626; border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+  .saved-host h3 { margin: 0 0 8px; font-size: 0.92rem; }
+  .saved-cat { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; font-size: 0.78rem; padding: 6px 0; border-top: 1px solid #1f1f1f; }
+  .saved-cat .names { color: #aaa; margin-top: 2px; line-height: 1.4; }
+</style>
+</head>
+<body>
+
+<div id="loginBox" class="center-box">
+  <h1>Admin login</h1>
+  <input id="passwordInput" class="wide" type="password" placeholder="Password">
+  <div id="loginError" class="error" style="display:none; margin-bottom:8px;"></div>
+  <button id="loginBtn" style="width:100%;">Log in</button>
+</div>
+
+<div id="mainPanel" class="panel" style="display:none;">
+  <h1>Panel Services</h1>
+  <p class="hint">
+    Pick which services each panel is allowed to use for Views, Likes, Share, Save, Comments and Repost.
+    When a customer connects their own API for a panel listed here, only these services load for them.
+    A customer with two panels gets both panels' services, alternating between panels.
+    Add panels first in <b>Auto Order → Master Providers</b> (they appear in the list below).
+  </p>
+
+  <div class="card">
+    <h2>1. Choose a panel</h2>
+    <div class="row">
+      <select id="providerSelect" style="min-width:280px;"></select>
+      <button id="loadServicesBtn">Load services</button>
+      <span id="loadStatus" class="hint" style="margin:0;"></span>
+    </div>
+  </div>
+
+  <div class="card" id="editorCard" style="display:none;">
+    <h2>2. Pick services per category — <span id="editorHost" class="mono"></span></h2>
+    <div class="tabs" id="catTabs"></div>
+    <div class="row">
+      <input id="searchInput" placeholder="Search name, id or category…" style="flex:1; min-width:200px;">
+      <span id="selCount" class="hint" style="margin:0;"></span>
+    </div>
+    <div class="svc-list" id="svcList"></div>
+    <div class="row" style="margin-top:12px;">
+      <button id="saveCatBtn">Save this category</button>
+      <button class="ghost" id="clearCatBtn">Clear selection</button>
+      <span id="saveStatus" class="hint" style="margin:0;"></span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Saved configuration</h2>
+    <div id="savedList"><div class="empty">Loading…</div></div>
+  </div>
+</div>
+
+<script>
+  const CATS = [
+    { key: 'views', label: '👁 Views' },
+    { key: 'likes', label: '❤️ Likes' },
+    { key: 'share', label: '📤 Share' },
+    { key: 'save', label: '🔖 Save' },
+    { key: 'comments', label: '💬 Comments' },
+    { key: 'repost', label: '🔁 Repost' },
+  ];
+  // keyword hints so the list opens on the most likely services for each tab
+  const CAT_HINT = { views: 'view', likes: 'like', share: 'share', save: 'save', comments: 'comment', repost: 'repost' };
+
+  let providers = [];
+  let currentHost = '';
+  let allServices = [];
+  let savedConfig = {};              // { host: { category: [{id,name}] } }
+  let selection = {};                // { category: Set(ids) } for the loaded panel
+  let currentCat = 'views';
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+
+  async function api(body) {
+    const res = await fetch('/api/panel-config', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok && data.success !== false, status: res.status, data };
+  }
+
+  async function boot() {
+    const r = await api({ action: 'providers' });
+    if (r.status === 401) { $('loginBox').style.display = 'block'; $('mainPanel').style.display = 'none'; return; }
+    $('loginBox').style.display = 'none';
+    $('mainPanel').style.display = 'block';
+    providers = (r.data.providers || []);
+    $('providerSelect').innerHTML = providers.length
+      ? providers.map((p) => `<option value="${esc(p.id)}">${esc(p.provider_name)} — ${esc(p.host)}</option>`).join('')
+      : '<option value="">No providers yet — add one in Auto Order first</option>';
+    await loadSaved();
+  }
+
+  $('loginBtn').addEventListener('click', async () => {
+    const res = await fetch('/api/admin/auth', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'login', password: $('passwordInput').value }),
+    });
+    if (res.ok) { await boot(); return; }
+    const data = await res.json().catch(() => ({}));
+    $('loginError').textContent = data.error || 'Login failed.';
+    $('loginError').style.display = 'block';
+  });
+  $('passwordInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('loginBtn').click(); });
+
+  async function loadSaved() {
+    const r = await api({ action: 'list' });
+    savedConfig = (r.data && r.data.config) || {};
+    renderSaved();
+  }
+
+  function renderSaved() {
+    const hosts = Object.keys(savedConfig);
+    if (!hosts.length) { $('savedList').innerHTML = '<div class="empty">Nothing configured yet. Panels without a configuration keep the old automatic keyword matching.</div>'; return; }
+    $('savedList').innerHTML = hosts.map((h) => {
+      const cats = savedConfig[h];
+      const rows = CATS.filter((c) => cats[c.key] && cats[c.key].length).map((c) => `
+        <div class="saved-cat">
+          <div><b>${c.label}</b> <span style="color:#777;">(${cats[c.key].length})</span>
+            <div class="names">${cats[c.key].map((s) => `#${esc(s.id)} ${esc(s.name || '')}`).join('<br>')}</div>
+          </div>
+          <button class="danger" data-del-host="${esc(h)}" data-del-cat="${c.key}">Remove</button>
+        </div>`).join('');
+      return `<div class="saved-host"><h3 class="mono">${esc(h)}
+        <button class="danger" style="float:right;" data-del-host="${esc(h)}" data-del-cat="">Remove panel</button></h3>${rows}</div>`;
+    }).join('');
+  }
+
+  $('savedList').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-del-host]');
+    if (!btn) return;
+    const host = btn.dataset.delHost, cat = btn.dataset.delCat;
+    if (!confirm(cat ? `Remove ${cat} services for ${host}?` : `Remove ALL configuration for ${host}?`)) return;
+    await api({ action: 'delete', panelHost: host, category: cat || undefined });
+    await loadSaved();
+    if (host === currentHost) applySavedToSelection();
+    renderEditor();
+  });
+
+  $('loadServicesBtn').addEventListener('click', async () => {
+    const providerId = $('providerSelect').value;
+    if (!providerId) return;
+    $('loadStatus').textContent = 'Loading services from the panel…';
+    $('loadServicesBtn').disabled = true;
+    const r = await api({ action: 'panel-services', providerId });
+    $('loadServicesBtn').disabled = false;
+    if (!r.ok) { $('loadStatus').textContent = r.data.error || 'Could not load services.'; $('loadStatus').className = 'error'; return; }
+    $('loadStatus').className = 'hint';
+    $('loadStatus').textContent = `${r.data.services.length} services loaded.`;
+    allServices = r.data.services;
+    currentHost = r.data.host;
+    $('editorHost').textContent = currentHost;
+    $('editorCard').style.display = 'block';
+    applySavedToSelection();
+    renderTabs();
+    renderEditor();
+  });
+
+  function applySavedToSelection() {
+    selection = {};
+    CATS.forEach((c) => {
+      const saved = (savedConfig[currentHost] && savedConfig[currentHost][c.key]) || [];
+      selection[c.key] = new Set(saved.map((s) => String(s.id)));
+    });
+  }
+
+  function renderTabs() {
+    $('catTabs').innerHTML = CATS.map((c) =>
+      `<button data-cat="${c.key}" class="${c.key === currentCat ? 'active' : ''}">${c.label} (${selection[c.key] ? selection[c.key].size : 0})</button>`
+    ).join('');
+  }
+  $('catTabs').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-cat]');
+    if (!b) return;
+    currentCat = b.dataset.cat;
+    $('searchInput').value = '';
+    renderTabs(); renderEditor();
+  });
+
+  function renderEditor() {
+    const q = $('searchInput').value.trim().toLowerCase();
+    const hint = CAT_HINT[currentCat];
+    const sel = selection[currentCat] || new Set();
+    let list = allServices.filter((s) => {
+      const hay = `${s.name} ${s.category} ${s.id}`.toLowerCase();
+      if (q) return hay.includes(q);
+      return hay.includes(hint) || sel.has(s.id);    // no search: show likely matches + already chosen
+    });
+    const total = list.length;
+    list = list.slice(0, 300);
+    $('svcList').innerHTML = list.length ? list.map((s) => `
+      <label class="svc-row">
+        <input type="checkbox" data-id="${esc(s.id)}" ${sel.has(s.id) ? 'checked' : ''}>
+        <div><div><span class="mono">#${esc(s.id)}</span> ${esc(s.name)}</div>
+        <div class="svc-meta">${esc(s.category)} · ${s.rate != null ? '$' + esc(s.rate) + '/1000' : ''} · min ${esc(s.min)} · max ${esc(s.max)}</div></div>
+      </label>`).join('')
+      : '<div class="empty">No matches. Use the search box to look through all services.</div>';
+    $('selCount').textContent = `${sel.size} selected` + (total > 300 ? ` · showing first 300 of ${total}, refine the search` : '');
+  }
+  $('searchInput').addEventListener('input', renderEditor);
+  $('svcList').addEventListener('change', (e) => {
+    const cb = e.target.closest('input[type=checkbox][data-id]');
+    if (!cb) return;
+    const set = selection[currentCat];
+    cb.checked ? set.add(cb.dataset.id) : set.delete(cb.dataset.id);
+    $('selCount').textContent = `${set.size} selected`;
+    renderTabs();
+  });
+  $('clearCatBtn').addEventListener('click', () => { selection[currentCat] = new Set(); renderTabs(); renderEditor(); });
+
+  $('saveCatBtn').addEventListener('click', async () => {
+    const byId = new Map(allServices.map((s) => [s.id, s]));
+    const services = [...selection[currentCat]].map((id) => ({ id, name: (byId.get(id) || {}).name || '' }));
+    $('saveStatus').className = 'hint';
+    $('saveStatus').textContent = 'Saving…';
+    const r = await api({ action: 'save', panelHost: currentHost, category: currentCat, services });
+    if (!r.ok) { $('saveStatus').className = 'error'; $('saveStatus').textContent = r.data.error || 'Save failed.'; return; }
+    $('saveStatus').className = 'ok';
+    $('saveStatus').textContent = services.length ? `Saved ${r.data.saved} services for ${currentCat}.` : `Cleared ${currentCat} — this panel falls back to automatic matching for it.`;
+    await loadSaved();
+  });
+
+  boot();
+</script>
+</body>
+</html>
