@@ -70,6 +70,10 @@ const PROFILES_KEY = "km_panel_profiles";
 // ==========================================
 const PANEL_CONFIG_CACHE = {}; // host -> { category: [{id,name}] } | null
 
+// true  = Auto tab uses ONLY the services the admin picked in /panel-config (nothing else loads).
+// false = old behaviour: panels/categories without admin config use every keyword-matched service.
+const AUTO_REQUIRE_ADMIN_CONFIG = true;
+
 function normalizeHost(url) {
   try {
     return new URL(String(url).trim()).hostname.toLowerCase().replace(/^www\./, "");
@@ -78,18 +82,19 @@ function normalizeHost(url) {
   }
 }
 
+// Returns: config object | null (reachable, nothing configured for this host) | false (couldn't reach the config)
 async function fetchPanelConfig(host) {
-  if (!host) return null;
+  if (!host) return false;
   if (Object.prototype.hasOwnProperty.call(PANEL_CONFIG_CACHE, host)) return PANEL_CONFIG_CACHE[host];
   try {
     const res = await fetch(`/api/panel-config?hosts=${encodeURIComponent(host)}`, { credentials: "include" });
-    if (!res.ok) return null; // failures are not cached — retry on next connect
+    if (!res.ok) return false; // failures are not cached — retry on next connect
     const data = await res.json();
     const cfg = data && data.success && data.config ? data.config[host] : null;
     PANEL_CONFIG_CACHE[host] = cfg && Object.keys(cfg).length ? cfg : null;
     return PANEL_CONFIG_CACHE[host];
   } catch {
-    return null;
+    return false;
   }
 }
 
@@ -97,11 +102,13 @@ async function fetchPanelConfig(host) {
 // Min/max/rate always come from the customer's own live panel list.
 async function applyPanelConfig(baseUrl, servicesList, groupedCatalog) {
   const cfg = await fetchPanelConfig(normalizeHost(baseUrl));
-  if (!cfg) return groupedCatalog;
+  if (cfg === false) return groupedCatalog; // config unreachable -> can't know what's allowed, keep keyword matching
+  if (!cfg && !AUTO_REQUIRE_ADMIN_CONFIG) return groupedCatalog;
 
   const liveById = new Map((servicesList || []).map((s) => [String(s.service), s]));
-  const out = { ...groupedCatalog };
-  Object.keys(cfg).forEach((cat) => {
+  // Strict: start empty so nothing the admin didn't pick can load. Lenient: start from keyword matches.
+  const out = AUTO_REQUIRE_ADMIN_CONFIG ? {} : { ...groupedCatalog };
+  Object.keys(cfg || {}).forEach((cat) => {
     const picked = (cfg[cat] || [])
       .map((entry) => {
         const live = liveById.get(String(entry.id));
@@ -879,6 +886,27 @@ function getServicePool(key) {
   return DEMO_CATALOG[key] || [];
 }
 
+// Short one-line summary for the note under each Auto card (names only on hover).
+function describePool(pool) {
+  if (!pool.length) return "";
+  if (pool.length === 1) return `Using: ${pool[0].name}`;
+  const panels = new Set(pool.map((s) => s._baseUrl || "")).size;
+  return `🔀 ${pool.length} services across ${panels} panel${panels > 1 ? "s" : ""}`;
+}
+
+function setPoolNote(el, pool, label) {
+  if (!el) return;
+  if (!pool.length) {
+    el.textContent = PROFILES.some((p) => p.connected)
+      ? `⚠️ No ${label} service set for your connected panel(s). Ask the admin to add one in Panel Services.`
+      : "";
+    el.title = "";
+    return;
+  }
+  el.textContent = describePool(pool);
+  el.title = pool.map((s) => `#${s.id} ${s.name}`).join("\n");
+}
+
 function renderFixedCards() {
   autoFixedCardsEl.innerHTML = FIXED_SERVICES.map((svc) => {
     const showManualPicker = !PANEL.connected;
@@ -1028,17 +1056,9 @@ function refreshAutoTab() {
   const viewsMinQty = Math.max(...viewsPool.map((s) => s.min), 1);
 
   const viewsNoteEl = document.getElementById("autoServiceNote-views");
-  if (viewsNoteEl) {
-    viewsNoteEl.textContent =
-      viewsPool.length > 1
-        ? `🔀 Auto round-robin across ${viewsPool.length} connected services: ${viewsPool.map((s) => s.name).join(", ")}`
-        : viewsPool.length === 1
-        ? `Using: ${viewsPool[0].name}`
-        : "";
-  }
+  setPoolNote(viewsNoteEl, viewsPool, "Views");
 
   if (viewsPool.length === 0) {
-    if (viewsNoteEl) viewsNoteEl.textContent = "⚠️ No Views service available on your connected panel(s).";
     window._autoTabLegs = [];
     totalQtyEl.textContent = "0";
     totalCostEl.textContent = formatCost(0);
@@ -1074,14 +1094,7 @@ function refreshAutoTab() {
     const minQty = Math.max(...pool.map((s) => s.min), 1);
 
     const noteEl = document.getElementById(`autoServiceNote-${svc.key}`);
-    if (noteEl) {
-      noteEl.textContent =
-        pool.length > 1
-          ? `🔀 Auto round-robin across ${pool.length} connected services`
-          : pool.length === 1
-          ? `Using: ${pool[0].name}`
-          : "";
-    }
+    setPoolNote(noteEl, pool, svc.label);
 
     // Auto-fill this service's quantity from the Views quantity, with a
     // little randomness so re-entering the same Views number doesn't
@@ -1097,10 +1110,7 @@ function refreshAutoTab() {
     document.getElementById(`minWarn-${svc.key}`).textContent =
       state.qty > 0 && state.qty < minQty ? `⚠️ Below minimum (${minQty.toLocaleString()}) for this service.` : "";
 
-    if (pool.length === 0) {
-      if (noteEl) noteEl.textContent = `⚠️ No ${svc.label} service available on your connected panel(s).`;
-      return;
-    }
+    if (pool.length === 0) return;
     if (!state.enabled || state.qty <= 0 || viewsLegs.length === 0) return;
 
     let legsCount = autoCalcLegs(state.qty, minQty, svc.key);
