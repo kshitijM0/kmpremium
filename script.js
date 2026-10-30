@@ -73,6 +73,7 @@ const PANEL_CONFIG_CACHE = {}; // host -> { category: [{id,name}] } | null
 // true  = Auto tab uses ONLY the services the admin picked in /panel-config (nothing else loads).
 // false = old behaviour: panels/categories without admin config use every keyword-matched service.
 const AUTO_REQUIRE_ADMIN_CONFIG = true;
+let PANEL_CONFIG_ERROR = ""; // last reason the admin config couldn't be loaded ("" = fine)
 
 function normalizeHost(url) {
   try {
@@ -88,12 +89,21 @@ async function fetchPanelConfig(host) {
   if (Object.prototype.hasOwnProperty.call(PANEL_CONFIG_CACHE, host)) return PANEL_CONFIG_CACHE[host];
   try {
     const res = await fetch(`/api/panel-config?hosts=${encodeURIComponent(host)}`, { credentials: "include" });
-    if (!res.ok) return false; // failures are not cached — retry on next connect
+    if (!res.ok) {
+      PANEL_CONFIG_ERROR = `HTTP ${res.status}`;
+      return false; // failures are not cached — retry on next connect
+    }
     const data = await res.json();
-    const cfg = data && data.success && data.config ? data.config[host] : null;
+    if (!data || !data.success) {
+      PANEL_CONFIG_ERROR = (data && data.error) || "bad response";
+      return false;
+    }
+    PANEL_CONFIG_ERROR = "";
+    const cfg = data.config ? data.config[host] : null;
     PANEL_CONFIG_CACHE[host] = cfg && Object.keys(cfg).length ? cfg : null;
     return PANEL_CONFIG_CACHE[host];
-  } catch {
+  } catch (err) {
+    PANEL_CONFIG_ERROR = (err && err.message) || "network error";
     return false;
   }
 }
@@ -102,7 +112,14 @@ async function fetchPanelConfig(host) {
 // Min/max/rate always come from the customer's own live panel list.
 async function applyPanelConfig(baseUrl, servicesList, groupedCatalog) {
   const cfg = await fetchPanelConfig(normalizeHost(baseUrl));
-  if (cfg === false) return groupedCatalog; // config unreachable -> can't know what's allowed, keep keyword matching
+  if (cfg === false) {
+    // Config unreachable. Strict mode: load NOTHING rather than silently using every service.
+    if (AUTO_REQUIRE_ADMIN_CONFIG) {
+      if (typeof addLog === "function") addLog(`Admin service list couldn't be loaded for ${normalizeHost(baseUrl)} (${PANEL_CONFIG_ERROR})`);
+      return {};
+    }
+    return groupedCatalog;
+  }
   if (!cfg && !AUTO_REQUIRE_ADMIN_CONFIG) return groupedCatalog;
 
   const liveById = new Map((servicesList || []).map((s) => [String(s.service), s]));
@@ -897,9 +914,11 @@ function describePool(pool) {
 function setPoolNote(el, pool, label) {
   if (!el) return;
   if (!pool.length) {
-    el.textContent = PROFILES.some((p) => p.connected)
-      ? `⚠️ No ${label} service set for your connected panel(s). Ask the admin to add one in Panel Services.`
-      : "";
+    el.textContent = !PROFILES.some((p) => p.connected)
+      ? ""
+      : PANEL_CONFIG_ERROR
+      ? `⚠️ Couldn't load the admin's service list (${PANEL_CONFIG_ERROR}). Reload the page; if it stays, /api/panel-config isn't deployed or its table is missing.`
+      : `⚠️ No ${label} service set for your connected panel(s). Ask the admin to add one in Panel Services.`;
     el.title = "";
     return;
   }
