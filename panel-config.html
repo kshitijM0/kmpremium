@@ -118,9 +118,21 @@
     return { ok: res.ok && data.success !== false, status: res.status, data };
   }
 
-  async function boot() {
+  function showLoginError(msg) {
+    $('loginError').textContent = msg;
+    $('loginError').style.display = 'block';
+  }
+
+  async function boot(justLoggedIn) {
     const r = await api({ action: 'providers' });
-    if (r.status === 401) { $('loginBox').style.display = 'block'; $('mainPanel').style.display = 'none'; return; }
+    if (r.status === 401) {
+      $('loginBox').style.display = 'block';
+      $('mainPanel').style.display = 'none';
+      if (justLoggedIn) showLoginError('Password accepted, but the admin session cookie was not accepted by /api/panel-config. Check that ADMIN_SESSION_SECRET is set in Vercel and try again.');
+      return;
+    }
+    if (r.status === 404) { showLoginError('/api/panel-config was not found — api/panel-config.js is not deployed yet.'); $('loginBox').style.display = 'block'; $('mainPanel').style.display = 'none'; return; }
+    if (r.status >= 500) { showLoginError('Server error (' + r.status + '): ' + (r.data.error || 'check Vercel logs and Supabase env vars.')); $('loginBox').style.display = 'block'; $('mainPanel').style.display = 'none'; return; }
     $('loginBox').style.display = 'none';
     $('mainPanel').style.display = 'block';
     providers = (r.data.providers || []);
@@ -131,15 +143,19 @@
   }
 
   $('loginBtn').addEventListener('click', async () => {
-    const res = await fetch('/api/admin/auth', {
-      method: 'POST', credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'login', password: $('passwordInput').value }),
-    });
-    if (res.ok) { await boot(); return; }
+    $('loginError').style.display = 'none';
+    let res;
+    try {
+      res = await fetch('/api/admin/auth', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'login', password: $('passwordInput').value }),
+      });
+    } catch (e) { showLoginError('Network error: ' + e.message); return; }
+    if (res.ok) { await boot(true); return; }
     const data = await res.json().catch(() => ({}));
-    $('loginError').textContent = data.error || 'Login failed.';
-    $('loginError').style.display = 'block';
+    const hints = { 404: ' (/api/admin/auth not found)', 429: ' (too many attempts — wait ~10 minutes)', 500: ' (server error — ADMIN_PASSWORD / ADMIN_SESSION_SECRET env missing?)' };
+    showLoginError((data.error || 'Login failed') + ' [HTTP ' + res.status + ']' + (hints[res.status] || ''));
   });
   $('passwordInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('loginBtn').click(); });
 
