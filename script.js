@@ -62,88 +62,6 @@ let PANEL = { baseUrl: "", apiKey: "", connected: false }; // "primary" profile 
 
 const PROFILES_KEY = "km_panel_profiles";
 
-// ==========================================
-// ADMIN-CURATED SERVICES PER PANEL
-// The admin picks, per panel (API host) and per category, which services may be used
-// (/panel-config page). When a customer connects a panel that has a config, ONLY those
-// services load for it. Panels without a config keep the old keyword matching.
-// ==========================================
-const PANEL_CONFIG_CACHE = {}; // host -> { category: [{id,name}] } | null
-
-// true  = Auto tab uses ONLY the services the admin picked in /panel-config (nothing else loads).
-// false = old behaviour: panels/categories without admin config use every keyword-matched service.
-const AUTO_REQUIRE_ADMIN_CONFIG = true;
-let PANEL_CONFIG_ERROR = ""; // last reason the admin config couldn't be loaded ("" = fine)
-
-function normalizeHost(url) {
-  try {
-    return new URL(String(url).trim()).hostname.toLowerCase().replace(/^www\./, "");
-  } catch {
-    return "";
-  }
-}
-
-// Returns: config object | null (reachable, nothing configured for this host) | false (couldn't reach the config)
-async function fetchPanelConfig(host) {
-  if (!host) return false;
-  if (Object.prototype.hasOwnProperty.call(PANEL_CONFIG_CACHE, host)) return PANEL_CONFIG_CACHE[host];
-  try {
-    const res = await fetch(`/api/panel-config?hosts=${encodeURIComponent(host)}`, { credentials: "include" });
-    if (!res.ok) {
-      PANEL_CONFIG_ERROR = `HTTP ${res.status}`;
-      return false; // failures are not cached — retry on next connect
-    }
-    const data = await res.json();
-    if (!data || !data.success) {
-      PANEL_CONFIG_ERROR = (data && data.error) || "bad response";
-      return false;
-    }
-    PANEL_CONFIG_ERROR = "";
-    const cfg = data.config ? data.config[host] : null;
-    PANEL_CONFIG_CACHE[host] = cfg && Object.keys(cfg).length ? cfg : null;
-    return PANEL_CONFIG_CACHE[host];
-  } catch (err) {
-    PANEL_CONFIG_ERROR = (err && err.message) || "network error";
-    return false;
-  }
-}
-
-// Replaces keyword-matched services with the admin's picks for every configured category.
-// Min/max/rate always come from the customer's own live panel list.
-async function applyPanelConfig(baseUrl, servicesList, groupedCatalog) {
-  const cfg = await fetchPanelConfig(normalizeHost(baseUrl));
-  if (cfg === false) {
-    // Config unreachable. Strict mode: load NOTHING rather than silently using every service.
-    if (AUTO_REQUIRE_ADMIN_CONFIG) {
-      if (typeof addLog === "function") addLog(`Admin service list couldn't be loaded for ${normalizeHost(baseUrl)} (${PANEL_CONFIG_ERROR})`);
-      return {};
-    }
-    return groupedCatalog;
-  }
-  if (!cfg && !AUTO_REQUIRE_ADMIN_CONFIG) return groupedCatalog;
-
-  const liveById = new Map((servicesList || []).map((s) => [String(s.service), s]));
-  // Strict: start empty so nothing the admin didn't pick can load. Lenient: start from keyword matches.
-  const out = AUTO_REQUIRE_ADMIN_CONFIG ? {} : { ...groupedCatalog };
-  Object.keys(cfg || {}).forEach((cat) => {
-    const picked = (cfg[cat] || [])
-      .map((entry) => {
-        const live = liveById.get(String(entry.id));
-        if (!live) return null; // this customer's panel doesn't have that id — skip it
-        return {
-          id: live.service,
-          name: live.name,
-          rate: parseFloat(live.rate) || 0.01,
-          min: parseInt(live.min, 10) || 1,
-          max: parseInt(live.max, 10) || 1000000,
-        };
-      })
-      .filter(Boolean);
-    if (picked.length) out[cat] = picked; // nothing usable -> keep keyword matching for this category
-  });
-  return out;
-}
-
 function saveProfiles() {
   try {
     const toSave = PROFILES.map((p) => ({ id: p.id, name: p.name, baseUrl: p.baseUrl, apiKey: p.apiKey }));
@@ -301,7 +219,7 @@ const schedulesPasswordInput = document.getElementById("schedulesPassword");
 const unlockSchedulesBtn = document.getElementById("unlockSchedulesBtn");
 const lockErrorEl = document.getElementById("lockError");
 
-const SCHEDULES_PASSWORD = "010";
+const SCHEDULES_PASSWORD = "777";
 
 let slotCounter = 0;
 const logEntries = [];
@@ -440,19 +358,10 @@ async function attemptConnect(name, baseUrl, apiKey, silent) {
     }
 
     let profileCatalog = {};
-    let autoCatalog = {};
     if (Array.isArray(servicesData)) {
       profileCatalog = groupServicesByCategory(servicesData);
       Object.keys(profileCatalog).forEach((cat) => {
         profileCatalog[cat].forEach((svc) => {
-          svc._baseUrl = baseUrl;
-          svc._apiKey = apiKey;
-        });
-      });
-
-      autoCatalog = await applyPanelConfig(baseUrl, servicesData, groupServicesForAuto(servicesData));
-      Object.keys(autoCatalog).forEach((cat) => {
-        autoCatalog[cat].forEach((svc) => {
           svc._baseUrl = baseUrl;
           svc._apiKey = apiKey;
         });
@@ -464,7 +373,6 @@ async function attemptConnect(name, baseUrl, apiKey, silent) {
       existing.name = name;
       existing.connected = true;
       existing.catalog = profileCatalog;
-      existing.autoCatalog = autoCatalog;
       existing.balanceText = balanceText;
     } else {
       PROFILES.push({
@@ -474,7 +382,6 @@ async function attemptConnect(name, baseUrl, apiKey, silent) {
         apiKey,
         connected: true,
         catalog: profileCatalog,
-        autoCatalog,
         balanceText,
       });
     }
@@ -556,33 +463,6 @@ function groupServicesByCategory(list) {
     else if (haystack.includes("follow")) bucket = "followers";
     else if (haystack.includes("comment")) bucket = "comments";
     else if (haystack.includes("share") || haystack.includes("repost")) bucket = "repost";
-
-    if (!groups[bucket]) groups[bucket] = [];
-    groups[bucket].push({
-      id: svc.service,
-      name: svc.name,
-      rate: parseFloat(svc.rate) || 0.01,
-      min: parseInt(svc.min, 10) || 1,
-      max: parseInt(svc.max, 10) || 1000000,
-    });
-  });
-  return groups;
-}
-
-// Used ONLY by the Auto tab (Manual keeps the original groupServicesByCategory above):
-// separates share / save / repost properly.
-function groupServicesForAuto(list) {
-  const groups = {};
-  list.forEach((svc) => {
-    const haystack = `${svc.name || ""} ${svc.category || ""} ${svc.type || ""}`.toLowerCase();
-    let bucket = "other";
-    if (haystack.includes("view")) bucket = "views";
-    else if (haystack.includes("like")) bucket = "likes";
-    else if (haystack.includes("follow")) bucket = "followers";
-    else if (haystack.includes("comment")) bucket = "comments";
-    else if (haystack.includes("repost")) bucket = "repost";
-    else if (haystack.includes("share")) bucket = "share";
-    else if (haystack.includes("save")) bucket = "save";
 
     if (!groups[bucket]) groups[bucket] = [];
     groups[bucket].push({
@@ -844,8 +724,6 @@ const FIXED_SERVICES = [
 const MIN_VIEWS_QTY_AUTO = 5000;
 const ENGAGEMENT_PERCENT = { likes: 0.047, share: 0.034, comments: 0.0023, repost: 0.0057, save: 0.012 };
 const VIEWS_LEGS_PER_1000 = 5;
-// Other services copy the views leg timings; their per-leg amounts vary by up to this % (total stays exact).
-const SYNC_AMOUNT_JITTER_PCT = 12;
 const DEFAULT_MIN_GAP_MIN = 8;
 const DEFAULT_MAX_GAP_MIN = 14;
 
@@ -884,15 +762,10 @@ function getActiveGapRange() {
     : { min: DEFAULT_MIN_GAP_MIN, max: DEFAULT_MAX_GAP_MIN };
 }
 
-function getConnectedServices(key) {
-  return PROFILES.filter((p) => p.connected).flatMap((p) => (p.autoCatalog && p.autoCatalog[key]) || []);
-}
-
 function getServicePool(key) {
-  // A real panel is connected -> ONLY its services (admin-curated when configured).
-  // Never fall back to demo ids here, they don't exist on a real panel.
-  if (PROFILES.some((p) => p.connected)) {
-    return getConnectedServices(key);
+  // Real connected panel -> use its live fetched services for this category automatically.
+  if (PANEL.connected && CATALOG[key] && CATALOG[key].length > 0) {
+    return CATALOG[key];
   }
   // No panel connected -> fall back to whichever demo service the person picked manually.
   const manualSelect = document.getElementById(`manualSvc-${key}`);
@@ -901,29 +774,6 @@ function getServicePool(key) {
     if (chosen) return [chosen];
   }
   return DEMO_CATALOG[key] || [];
-}
-
-// Short one-line summary for the note under each Auto card (names only on hover).
-function describePool(pool) {
-  if (!pool.length) return "";
-  if (pool.length === 1) return `Using: ${pool[0].name}`;
-  const panels = new Set(pool.map((s) => s._baseUrl || "")).size;
-  return `🔀 ${pool.length} services across ${panels} panel${panels > 1 ? "s" : ""}`;
-}
-
-function setPoolNote(el, pool, label) {
-  if (!el) return;
-  if (!pool.length) {
-    el.textContent = !PROFILES.some((p) => p.connected)
-      ? ""
-      : PANEL_CONFIG_ERROR
-      ? `⚠️ Couldn't load the admin's service list (${PANEL_CONFIG_ERROR}). Reload the page; if it stays, /api/panel-config isn't deployed or its table is missing.`
-      : `⚠️ No ${label} service set for your connected panel(s). Ask the admin to add one in Panel Services.`;
-    el.title = "";
-    return;
-  }
-  el.textContent = describePool(pool);
-  el.title = pool.map((s) => `#${s.id} ${s.name}`).join("\n");
 }
 
 function renderFixedCards() {
@@ -1019,21 +869,8 @@ function getFixedServiceInputs(key) {
   };
 }
 
-// Alternates between PANELS first, then between services inside each panel, so two connected
-// panels share the legs evenly even when one has more services than the other.
 function assignRoundRobin(pool, count) {
-  if (!pool.length) return [];
-  const groups = new Map();
-  pool.forEach((svc) => {
-    const k = `${svc._baseUrl || ""}|${svc._apiKey || ""}`;
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k).push(svc);
-  });
-  const panels = [...groups.values()];
-  return Array.from({ length: count }, (_, i) => {
-    const panelServices = panels[i % panels.length];
-    return panelServices[Math.floor(i / panels.length) % panelServices.length];
-  });
+  return Array.from({ length: count }, (_, i) => pool[i % pool.length]);
 }
 
 function generateAutoLegs(quantity, legsCount, totalMinutes, gapMode, minQty) {
@@ -1075,14 +912,13 @@ function refreshAutoTab() {
   const viewsMinQty = Math.max(...viewsPool.map((s) => s.min), 1);
 
   const viewsNoteEl = document.getElementById("autoServiceNote-views");
-  setPoolNote(viewsNoteEl, viewsPool, "Views");
-
-  if (viewsPool.length === 0) {
-    window._autoTabLegs = [];
-    totalQtyEl.textContent = "0";
-    totalCostEl.textContent = formatCost(0);
-    updateGraph([]);
-    return;
+  if (viewsNoteEl) {
+    viewsNoteEl.textContent =
+      viewsPool.length > 1
+        ? `🔀 Auto round-robin across ${viewsPool.length} connected services: ${viewsPool.map((s) => s.name).join(", ")}`
+        : viewsPool.length === 1
+        ? `Using: ${viewsPool[0].name}`
+        : "";
   }
 
   document.getElementById("minWarn-views").textContent =
@@ -1113,7 +949,14 @@ function refreshAutoTab() {
     const minQty = Math.max(...pool.map((s) => s.min), 1);
 
     const noteEl = document.getElementById(`autoServiceNote-${svc.key}`);
-    setPoolNote(noteEl, pool, svc.label);
+    if (noteEl) {
+      noteEl.textContent =
+        pool.length > 1
+          ? `🔀 Auto round-robin across ${pool.length} connected services`
+          : pool.length === 1
+          ? `Using: ${pool[0].name}`
+          : "";
+    }
 
     // Auto-fill this service's quantity from the Views quantity, with a
     // little randomness so re-entering the same Views number doesn't
@@ -1129,7 +972,6 @@ function refreshAutoTab() {
     document.getElementById(`minWarn-${svc.key}`).textContent =
       state.qty > 0 && state.qty < minQty ? `⚠️ Below minimum (${minQty.toLocaleString()}) for this service.` : "";
 
-    if (pool.length === 0) return;
     if (!state.enabled || state.qty <= 0 || viewsLegs.length === 0) return;
 
     let legsCount = autoCalcLegs(state.qty, minQty, svc.key);
@@ -1141,8 +983,7 @@ function refreshAutoTab() {
       minQty,
       viewsLegs.length > legsCount
         ? viewsLegs.filter((_, i) => i % Math.ceil(viewsLegs.length / legsCount) === 0).slice(0, legsCount)
-        : viewsLegs,
-      SYNC_AMOUNT_JITTER_PCT
+        : viewsLegs
     );
     let legs = result.legs;
 
@@ -1264,7 +1105,7 @@ function enforceMinimum(legs, minQty) {
   return arr;
 }
 
-function generateSyncedLegsWithReduction(quantity, minQty, referenceLegs, amountJitterPct = 0) {
+function generateSyncedLegsWithReduction(quantity, minQty, referenceLegs) {
   const maxLegsAllowed = minQty > 0 ? Math.max(1, Math.floor(quantity / minQty)) : referenceLegs.length;
   let reference = referenceLegs;
   let reduced = false;
@@ -1281,19 +1122,13 @@ function generateSyncedLegsWithReduction(quantity, minQty, referenceLegs, amount
   }
 
   const weightSum = reference.reduce((a, l) => a + l.amount, 0) || 1;
-  // Timing always comes from the views legs. Amounts follow the views shape with a little randomness.
-  const build = (jitterPct) => {
-    let remaining = quantity;
-    return reference.map((refLeg, i) => {
-      const isLast = i === reference.length - 1;
-      let amount = isLast ? remaining : Math.round((refLeg.amount / weightSum) * quantity);
-      if (!isLast && jitterPct > 0) amount = Math.max(0, Math.round(jitter(amount, jitterPct)));
-      remaining -= isLast ? 0 : amount;
-      return { index: i + 1, amount, minutesAt: refLeg.minutesAt };
-    });
-  };
-  let legs = build(amountJitterPct);
-  if (legs.some((l) => l.amount < 0)) legs = build(0); // jitter overshot -> redo without it so the total stays exact
+  let remaining = quantity;
+  let legs = reference.map((refLeg, i) => {
+    const isLast = i === reference.length - 1;
+    const amount = isLast ? remaining : Math.round((refLeg.amount / weightSum) * quantity);
+    remaining -= isLast ? 0 : amount;
+    return { index: i + 1, amount, minutesAt: refLeg.minutesAt };
+  });
   legs = legs.filter((l) => l.amount > 0);
   legs = enforceMinimum(legs, minQty);
 
