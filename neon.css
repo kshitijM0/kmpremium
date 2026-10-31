@@ -59,10 +59,28 @@ body::before{
 .shell{ position: relative; z-index: 1; }
 
 /* ---------- header ---------- */
-.brand-logo{
-  background: linear-gradient(135deg, #8fc6ff, #8c7dff);
+/* "The" and "KM": two different colour blends from the page's palette, each slowly
+   drifting through its colours (out of step with each other). Calm, no glow. */
+.brand-the, .brand-logo{
   -webkit-background-clip: text; background-clip: text;
   -webkit-text-fill-color: transparent; color: transparent;
+  background-size: 260% 100%;
+  animation: brand-flow 9s ease-in-out infinite alternate;
+}
+.brand-the{
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.25rem;
+  letter-spacing: 0.03em;
+  background-image: linear-gradient(90deg, #b3a6ff 0%, #7b9bff 35%, #6cb4ff 65%, #b3a6ff 100%);
+}
+.brand-logo{
+  background-image: linear-gradient(90deg, #86e6ff 0%, #6cb4ff 30%, #8f7dff 65%, #86e6ff 100%);
+  animation-direction: alternate-reverse;
+}
+@keyframes brand-flow{
+  from{ background-position: 0% 50%; }
+  to{   background-position: 100% 50%; }
 }
 .balance-pill{ background: rgba(51,209,122,0.08); border-color: rgba(51,209,122,0.28); }
 .balance-dot{ box-shadow: 0 0 6px var(--green); }
