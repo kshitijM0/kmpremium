@@ -2,9 +2,10 @@
   "name": "my-secure-panel",
   "version": "1.0.0",
   "private": true,
-  "scripts": {
-    "start": "node server.js"
-  },
+ "scripts": {
+  "build": "node build.js",
+  "start": "node server.js"
+},
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",
     "@upstash/ratelimit": "^2.0.5",
