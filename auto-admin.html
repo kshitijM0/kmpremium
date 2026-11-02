@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KM Panel — Auto Order Providers</title>
+<title>The KM — Auto Admin</title>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; min-height: 100vh; background: #0a0a0a; color: #f2f2f2; font-family: -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; }
@@ -38,11 +38,24 @@
   .table-wrap { overflow-x: auto; }
   .service-select-wrap { min-width: 260px; flex: 1; }
   .service-search { width: 100%; margin-bottom: 8px; }
+  .brand { font-weight: 800; font-size: 1.05rem; letter-spacing: 0.02em; margin-bottom: 14px;
+           background: linear-gradient(135deg, #6cb4ff, #a396ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .brand span { color: #777; -webkit-text-fill-color: #777; font-weight: 500; font-size: 0.8rem; margin-left: 6px; }
+  .hint { color: #8a8a8a; font-size: 0.8rem; line-height: 1.5; margin: 0 0 12px; }
+  .newkey { background: #0d1f17; border: 1px solid #1f6f4a; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+  .newkey .k { font-family: monospace; font-size: 1.05rem; letter-spacing: 0.05em; color: #34d399; }
+  .newkey .line { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 4px 0; }
+  .badge.active { background: #052e1c; color: #34d399; }
+  .badge.exhausted { background: #2e2205; color: #fbbf24; }
+  .badge.revoked { background: #2e0505; color: #f87171; }
+  .meter { width: 90px; height: 5px; background: #262626; border-radius: 4px; overflow: hidden; margin-top: 4px; }
+  .meter i { display: block; height: 100%; background: #34d399; }
 </style>
 </head>
 <body>
 
 <div id="loginBox" class="center-box">
+  <div class="brand">The KM <span>Auto Admin</span></div>
   <h1>Admin login</h1>
   <input id="passwordInput" class="wide" type="password" placeholder="Password">
   <div id="loginError" class="error" style="display:none; margin-bottom:8px;"></div>
@@ -50,7 +63,31 @@
 </div>
 
 <div id="mainPanel" class="panel" style="display:none;">
-  <h1>Auto Order — Master Provider Manager</h1>
+  <div class="brand">The KM <span>Auto Admin</span></div>
+  <h1>Auto Order — Keys &amp; Providers</h1>
+
+  <div class="card">
+    <h2 style="margin-top:0;">Customer Keys (balance in USD)</h2>
+    <p class="hint">Make a key with a fixed balance (for example $1, $2, $5). The customer pastes it in the site's Auto tab. Every order is charged from that key at the customer rates you set in <b>Service Mapping</b> below, and the key switches itself off when its balance is used up. When they want more, take payment and make a new key (or top the same key up).</p>
+    <div class="row">
+      <input id="newKeyAmount" type="number" min="0.01" step="0.01" placeholder="Amount in $ (e.g. 2)" style="width:170px;">
+      <input id="newKeyNote" placeholder="Note (customer name)" style="min-width:200px;" maxlength="100">
+      <input id="newKeyCount" type="number" min="1" max="20" value="1" style="width:70px;" title="How many keys to make">
+      <button id="createKeyBtn" class="secondary">Create key</button>
+      <span id="keysMsg" class="error" style="display:none;"></span>
+    </div>
+    <div id="newKeyResult" class="newkey" style="display:none;"></div>
+    <div class="row">
+      <span id="keysSummary" class="hint" style="margin:0;"></span>
+      <button class="ghost" id="reloadKeysBtn">Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Key</th><th>Balance</th><th>Status</th><th>Note</th><th>Last used</th><th>Actions</th></tr></thead>
+        <tbody id="keysBody"></tbody>
+      </table>
+    </div>
+  </div>
 
   <div class="card">
     <h2>Master Providers</h2>
@@ -108,33 +145,166 @@
   let providersCache = [];
   let servicesCache = [];
 
-  async function boot() {
-    const res = await fetch('/api/auto?route=providers');
-    if (res.ok) {
-      loginBox.style.display = 'none';
-      mainPanel.style.display = 'block';
-      await loadProviders();
-      renderTypeTabs();
-      await loadMapping();
+  function showLoginError(msg) {
+    const el = document.getElementById('loginError');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  // Returns true once the panel is open. Anything that goes wrong is shown on the login box.
+  async function boot(justLoggedIn) {
+    let res;
+    try { res = await fetch('/api/auto?route=providers', { credentials: 'include' }); }
+    catch (e) { showLoginError('Network error: ' + e.message); return false; }
+    if (res.status === 401) {
+      if (justLoggedIn) showLoginError('Password accepted, but the session cookie was not kept. Set ADMIN_SESSION_SECRET in Vercel, redeploy, and try again.');
+      return false;
     }
+    if (res.status === 404) { showLoginError('/api/auto was not found — deploy api/auto.js first.'); return false; }
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      showLoginError('Server error (' + res.status + '): ' + (d.error || 'check the Vercel function logs.'));
+      return false;
+    }
+    loginBox.style.display = 'none';
+    mainPanel.style.display = 'block';
+    await loadKeys();
+    await loadProviders();
+    renderTypeTabs();
+    await loadMapping();
+    return true;
   }
 
   document.getElementById('loginBtn').addEventListener('click', async () => {
+    document.getElementById('loginError').style.display = 'none';
     const password = document.getElementById('passwordInput').value;
-    const res = await fetch('/api/admin/auth', {
-      method: 'POST',
-      credentials: 'include',
+    let res;
+    try {
+      res = await fetch('/api/admin/auth', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'login', password })
+      });
+    } catch (e) { showLoginError('Network error: ' + e.message); return; }
+    if (res.ok) { await boot(true); return; }
+    const data = await res.json().catch(() => ({}));
+    const hints = {
+      401: ' Check the password (it is the ADMIN_PASSWORD value in Vercel).',
+      404: ' /api/admin/auth is missing — deploy api/auto.js and vercel.json.',
+      429: ' Too many tries — wait about 10 minutes.',
+      500: ' ADMIN_PASSWORD or ADMIN_SESSION_SECRET is not set in Vercel.'
+    };
+    showLoginError((data.error || 'Login failed.') + ' [HTTP ' + res.status + ']' + (hints[res.status] || ''));
+  });
+  document.getElementById('passwordInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('loginBtn').click(); });
+
+  // ---------------- Customer keys ----------------
+  const fmtUsd = (n) => { const v = Number(n) || 0; return v >= 1 ? '$' + v.toFixed(2) : '$' + v.toFixed(3); };
+  const escHtml = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let keysCache = [];
+
+  function keysMessage(text) {
+    const el = document.getElementById('keysMsg');
+    el.textContent = text || '';
+    el.style.display = text ? 'inline' : 'none';
+  }
+
+  async function keysApi(body) {
+    const res = await fetch('/api/auto?route=keys', {
+      method: 'POST', credentials: 'include',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ action: 'login', password })
+      body: JSON.stringify(body)
     });
-    if (res.ok) {
-      await boot();
-    } else {
-      const data = await res.json().catch(() => ({}));
-      const el = document.getElementById('loginError');
-      el.textContent = data.error || 'Login failed.';
-      el.style.display = 'block';
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok && data.success !== false, data };
+  }
+
+  async function loadKeys() {
+    const res = await fetch('/api/auto?route=keys', { credentials: 'include' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { keysMessage(data.error || 'Could not load keys.'); return; }
+    keysCache = data.keys || [];
+    renderKeys();
+  }
+
+  function renderKeys() {
+    const body = document.getElementById('keysBody');
+    const active = keysCache.filter((k) => k.status === 'active');
+    const held = active.reduce((a, k) => a + Number(k.remaining_usd), 0);
+    document.getElementById('keysSummary').textContent = keysCache.length
+      ? keysCache.length + ' keys · ' + active.length + ' active · ' + fmtUsd(held) + ' of customer balance still unspent'
+      : '';
+    if (!keysCache.length) { body.innerHTML = '<tr><td colspan="6" class="empty">No keys yet. Make the first one above.</td></tr>'; return; }
+    body.innerHTML = keysCache.map((k) => {
+      const pct = Math.max(0, Math.min(100, (Number(k.remaining_usd) / Number(k.initial_usd || 1)) * 100));
+      const live = k.status === 'active';
+      return `<tr>
+        <td class="mono">${escHtml(k.key_value)}</td>
+        <td>${fmtUsd(k.remaining_usd)} <span style="color:#777;">of ${fmtUsd(k.initial_usd)}</span><div class="meter"><i style="width:${pct}%"></i></div></td>
+        <td><span class="badge ${escHtml(k.status)}">${escHtml(k.status)}</span></td>
+        <td>${escHtml(k.note || '')}</td>
+        <td>${k.last_used_at ? new Date(k.last_used_at).toLocaleString() : '—'}</td>
+        <td>
+          <button class="ghost" data-k="copy" data-id="${escHtml(k.id)}">Copy</button>
+          <button class="secondary" data-k="topup" data-id="${escHtml(k.id)}" ${k.status === 'revoked' ? 'disabled' : ''}>Top up</button>
+          <button class="danger" data-k="revoke" data-id="${escHtml(k.id)}" ${live || k.status === 'exhausted' ? '' : 'disabled'}>Deactivate</button>
+          <button class="ghost" data-k="delete" data-id="${escHtml(k.id)}">Delete</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  document.getElementById('createKeyBtn').addEventListener('click', async () => {
+    keysMessage('');
+    const amount = Number(document.getElementById('newKeyAmount').value);
+    if (!(amount > 0)) { keysMessage('Enter an amount in dollars, for example 2.'); return; }
+    const btn = document.getElementById('createKeyBtn'); btn.disabled = true;
+    const r = await keysApi({
+      action: 'create', amount,
+      note: document.getElementById('newKeyNote').value.trim(),
+      count: Number(document.getElementById('newKeyCount').value) || 1
+    });
+    btn.disabled = false;
+    if (!r.ok) { keysMessage(r.data.error || 'Could not create the key.'); return; }
+    const box = document.getElementById('newKeyResult');
+    box.style.display = 'block';
+    box.innerHTML = '<div style="color:#999;font-size:0.78rem;margin-bottom:4px;">New key' + (r.data.keys.length > 1 ? 's' : '') + ' — send ' + (r.data.keys.length > 1 ? 'each to a customer' : 'this to the customer') + ':</div>' +
+      r.data.keys.map((k) => `<div class="line"><span class="k">${escHtml(k.key_value)}</span><span>${fmtUsd(k.initial_usd)}</span><button class="ghost" data-copy="${escHtml(k.key_value)}">Copy</button></div>`).join('');
+    document.getElementById('newKeyAmount').value = '';
+    document.getElementById('newKeyNote').value = '';
+    await loadKeys();
+  });
+
+  document.getElementById('newKeyResult').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-copy]');
+    if (b) { navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copied'; }
+  });
+
+  document.getElementById('reloadKeysBtn').addEventListener('click', loadKeys);
+
+  document.getElementById('keysBody').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-k]');
+    if (!b) return;
+    const key = keysCache.find((k) => k.id === b.dataset.id);
+    if (!key) return;
+    keysMessage('');
+    if (b.dataset.k === 'copy') { navigator.clipboard.writeText(key.key_value); b.textContent = 'Copied'; return; }
+    if (b.dataset.k === 'topup') {
+      const v = prompt('Add how many dollars to ' + key.key_value + '?', '1');
+      if (v === null) return;
+      const r = await keysApi({ action: 'topup', id: key.id, amount: Number(v) });
+      if (!r.ok) keysMessage(r.data.error || 'Top-up failed.');
+    } else if (b.dataset.k === 'revoke') {
+      if (!confirm('Deactivate ' + key.key_value + '? The customer will not be able to order with it any more.')) return;
+      const r = await keysApi({ action: 'revoke', id: key.id });
+      if (!r.ok) keysMessage(r.data.error || 'Could not deactivate.');
+    } else if (b.dataset.k === 'delete') {
+      if (!confirm('Delete ' + key.key_value + ' and its history for good?')) return;
+      const r = await keysApi({ action: 'delete', id: key.id });
+      if (!r.ok) keysMessage(r.data.error || 'Could not delete.');
     }
+    await loadKeys();
   });
 
   async function loadProviders() {

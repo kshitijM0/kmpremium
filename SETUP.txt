@@ -1,0 +1,20 @@
+SETUP — do these in order (about 10 minutes)
+
+1) SUPABASE   -> SQL Editor -> New query -> paste supabase/auto-keys-schema.sql -> Run.
+2) GITHUB     -> upload everything in this folder to your repo, keeping the folders:
+                 api/auto.js, lib/auto/*, supabase/*, vercel.json,
+                 index.html, script.js, style.css (unchanged), auto-key.css, neon.css,
+                 admin.html, auto-admin.html
+               If your repo already has api/admin/auth.js it can stay (or be deleted); api/auto.js now also answers /api/admin/auth.
+3) VERCEL     -> Settings -> Environment Variables must contain:
+                 ADMIN_PASSWORD, ADMIN_SESSION_SECRET, PROVIDER_ENCRYPTION_KEY,
+                 SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+               (optional) RENDER_PROXY_URL  — only if your scheduler isn't https://kmpanel.onrender.com
+               Change an env value -> Deployments -> Redeploy.
+4) ADMIN      -> yoursite/auto-admin
+                 a) Master Providers: add your panels (API url + key)
+                 b) Service Mapping: for views, likes, shares, saves, reposts, comments pick the service
+                    and set the CUSTOMER RATE in dollars per 1000. A service with no rate is hidden from customers.
+                 c) Customer Keys: type the dollars (1, 2, 5...) -> Create key -> send it to the customer.
+5) CUSTOMER   -> site -> Order -> Auto -> pastes the key -> orders. Balance drops with every order;
+                 at $0 the key deactivates by itself.

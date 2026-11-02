@@ -1,3 +1,7 @@
 {
-  "cleanUrls": true
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/api/admin/auth", "destination": "/api/auto?route=auth" },
+    { "source": "/api/panel-config", "destination": "/api/auto?route=panel-config" }
+  ]
 }

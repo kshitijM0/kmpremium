@@ -1,19 +1,14 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <link rel="icon" type="image/png" href="/favicon.png">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The KM</title>
-
-    <!-- PWA Settings -->
-  <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#04070F">
-  <link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="gate.css">
+  <link rel="stylesheet" href="auto-key.css">
   <link rel="stylesheet" href="neon.css">
   <meta name="theme-color" content="#02050f">
 </head>
@@ -24,7 +19,8 @@
   <!-- HEADER -->
   <header class="topbar">
     <div class="brand">
-      <span class="brand-logo">The KM</span>
+      <span class="brand-the">The</span>
+      <span class="brand-logo">KM</span>
     </div>
     <div class="balance-pill">
       <span class="balance-dot"></span>
@@ -101,40 +97,58 @@
           <button class="mode-toggle-btn" id="manualModeBtn" data-mode="manual">✋ Manual</button>
         </div>
 
-        <button class="presets-btn" id="presetsBtn">
+        <!-- AUTO: key gate (shown until a valid key is entered) -->
+        <div class="auto-gate-card auto-only" id="autoKeyGate">
+          <div class="gate-icon">🔑</div>
+          <div class="gate-title">Enter your KM key</div>
+          <p class="gate-sub">Auto orders are paid from your key's balance. Paste the key you got from the admin to start.</p>
+          <input id="autoKeyInput" class="input full" type="text" placeholder="KM-XXXX-XXXX-XXXX" autocomplete="off" autocapitalize="characters" spellcheck="false">
+          <button id="autoKeyUnlockBtn" class="submit-btn">Unlock Auto</button>
+          <div id="autoKeyMsg" class="connect-status"></div>
+          <div class="gate-help">Need a key? Message <a href="https://t.me/kshitijM1" target="_blank" rel="noopener">@kshitijM1</a> on Telegram.</div>
+        </div>
+
+        <!-- AUTO: key bar -->
+        <div class="auto-keybar auto-only auto-gated" id="autoKeyBar">
+          <div class="keybar-row">
+            <span class="keybar-key">🔑 <b id="autoKeyMask">KM-••••-••••-••••</b></span>
+            <button class="keybar-btn" id="autoKeyChangeBtn" type="button">Change key</button>
+          </div>
+          <div class="keybar-row">
+            <span class="keybar-bal"><span class="keybar-label">Balance</span> <b id="autoKeyBalance">$0.00</b> <span class="keybar-of" id="autoKeyOf"></span></span>
+          </div>
+          <div class="keybar-meter"><i id="autoKeyMeter"></i></div>
+        </div>
+
+        <button class="presets-btn auto-gated" id="presetsBtn">
           <span><span class="card-icon">💾</span> Saved Presets</span>
           <span class="chevron">▾</span>
         </button>
 
-        <div class="field-block">
+        <div class="field-block auto-gated">
           <span class="field-label">Schedule name</span>
           <input id="scheduleName" class="input full" type="text" placeholder="e.g. Reel Daily Push">
         </div>
 
-        <div class="field-block">
+        <div class="field-block auto-gated">
           <span class="field-label">Target link</span>
           <input id="targetLink" class="input full" type="text" placeholder="https://instagram.com/p/...">
         </div>
 
-        <div class="section-title"><span class="card-icon">🧩</span> Services</div>
+        <div class="section-title auto-gated"><span class="card-icon">🧩</span> Services</div>
 
         <!-- AUTO MODE: fixed toggle cards -->
-        <div id="autoServicesBlock">
+        <div id="autoServicesBlock" class="auto-gated">
           <div id="autoFixedCards" class="fixed-svc-cards"></div>
 
-          <div class="field-block" style="margin-top:16px;">
-            <span class="field-label">⏱ Leg Gap Mode</span>
-            <div class="gap-mode-row">
-              <button class="gap-mode-btn active" id="gapAutoBtn" data-gap="auto">Auto (8–14 min)</button>
-              <button class="gap-mode-btn" id="gapManualBtn" data-gap="manual">Manual (fixed)</button>
+          <div class="field-block auto-window">
+            <span class="field-label">⏳ Delivery speed</span>
+            <div class="window-row" id="autoWindowRow">
+              <button type="button" class="window-btn active" data-window="pending"><b>Pending</b><small>6–12 hrs</small></button>
+              <button type="button" class="window-btn" data-window="mid"><b>Mid</b><small>12–24 hrs</small></button>
+              <button type="button" class="window-btn" data-window="approved"><b>Approved</b><small>24–48 hrs</small></button>
             </div>
           </div>
-
-          <div class="extra-legs-head" id="autoExtraLegsHead" style="display:none;">
-            <span>🦵 Extra Services — Legs <span id="autoExtraLegsCount" class="extra-legs-count"></span></span>
-            <button class="extra-legs-expand" id="autoExtraLegsToggle">▾</button>
-          </div>
-          <div id="autoExtraLegsList" class="extra-legs-list" style="display:none;"></div>
         </div>
 
         <!-- MANUAL MODE: dynamic add/remove slots (old curve system) -->
@@ -153,20 +167,24 @@
       </div>
 
       <!-- GROWTH GRAPH -->
-      <div class="graph-card">
+      <div class="graph-card auto-gated">
         <div class="graph-head">
           <span class="graph-title">Delivery by service</span>
-          <div class="live-pill"><span class="live-dot"></span>LIVE</div>
+          <div class="graph-head-right">
+            <button type="button" id="autoRegenBtn" class="regen-btn auto-only" title="Shuffle timing &amp; pattern" aria-label="Shuffle timing and pattern">↻</button>
+            <div class="live-pill"><span class="live-dot"></span>LIVE</div>
+          </div>
         </div>
         <svg id="growthSvg" class="graph-svg" viewBox="0 0 600 120" preserveAspectRatio="none">
           <g id="graphLinesGroup"></g>
         </svg>
         <div id="growthTooltip" class="graph-tooltip" style="display:none;"></div>
         <div id="graphLegend" class="graph-legend"></div>
+        <div id="graphMeta" class="graph-meta auto-only"></div>
       </div>
 
       <!-- COST SUMMARY -->
-      <div class="cost-card">
+      <div class="cost-card auto-gated">
         <div class="summary-row">
           <span>Total quantity</span>
           <span id="totalQty" class="mono">0</span>
@@ -174,6 +192,14 @@
         <div class="summary-row summary-total">
           <span>Estimated cost</span>
           <span id="totalCost" class="mono">$0.00</span>
+        </div>
+        <div class="summary-row auto-only">
+          <span>Key balance</span>
+          <span id="costKeyBalance" class="mono">$0.00</span>
+        </div>
+        <div class="summary-row auto-only">
+          <span>Balance after this order</span>
+          <span id="costBalanceAfter" class="mono">$0.00</span>
         </div>
         <button class="submit-btn" id="submitOrderBtn">Create Order</button>
         <div id="orderStatus" class="connect-status"></div>

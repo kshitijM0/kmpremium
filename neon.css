@@ -245,3 +245,17 @@ html body .kmp-history-row, html body .kmp-summary-row.total{ border-color: #152
 @media (prefers-reduced-motion: reduce){
   *, *::before, *::after{ animation: none !important; transition: none !important; }
 }
+
+/* ---------- Auto tab: key gate, key bar, delivery speed, reload ---------- */
+.auto-gate-card{ background: linear-gradient(180deg, rgba(12,23,48,0.85), rgba(8,15,32,0.95)); border-color: #25407a; }
+.auto-gate-card .input{ color: var(--ice); }
+.auto-keybar{ background: rgba(12,23,48,0.75); border-color: #1f3160; }
+.keybar-btn{ border-color: #25407a; }
+.keybar-meter{ background: #12234a; }
+.keybar-meter i{ background: linear-gradient(90deg, #33d17a, #6cb4ff); }
+.window-btn{ background: rgba(12,23,48,0.7); border-color: #1d2f58; }
+.window-btn:hover{ border-color: #4a86ff; }
+.window-btn.active{ background: linear-gradient(135deg, rgba(47,120,255,0.26), rgba(91,79,230,0.26)); border-color: #5b8cff; }
+.regen-btn{ background: rgba(12,23,48,0.8); border-color: #25407a; color: var(--ice); }
+.regen-btn:hover{ border-color: #6cb4ff; background: rgba(47,120,255,0.18); }
+.graph-meta{ color: #8aa0c8; }

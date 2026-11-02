@@ -1,0 +1,94 @@
+/* =====================================================================
+   AUTO TAB (prepaid key) — layout for the new pieces.
+   Uses the site's CSS variables, so it follows whatever theme is loaded.
+   ===================================================================== */
+
+/* ---- which parts show in which mode ---- */
+body[data-mode="manual"] .auto-only { display: none !important; }
+body[data-mode="auto"][data-auto-locked="1"] .auto-gated { display: none !important; }
+body[data-auto-locked="1"] .auto-keybar { display: none !important; }
+.auto-gate-card { display: none; }
+body[data-mode="auto"][data-auto-locked="1"] .auto-gate-card { display: block; }
+
+/* ---- key gate ---- */
+.auto-gate-card {
+  margin: 4px 0 6px;
+  padding: 22px 18px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel-2);
+  text-align: center;
+}
+.gate-icon { font-size: 1.9rem; line-height: 1; margin-bottom: 8px; }
+.gate-title { font-family: var(--font-display, inherit); font-weight: 700; font-size: 1.15rem; margin-bottom: 6px; }
+.gate-sub { color: var(--muted); font-size: 0.82rem; line-height: 1.5; margin: 0 0 14px; }
+.auto-gate-card .input { text-align: center; letter-spacing: 0.06em; font-family: ui-monospace, Menlo, Consolas, monospace; margin-bottom: 10px; }
+.auto-gate-card .connect-status { margin-top: 10px; min-height: 1.2em; }
+.gate-help { margin-top: 12px; color: var(--muted); font-size: 0.76rem; }
+.gate-help a { color: var(--red); text-decoration: none; }
+
+/* ---- key bar ---- */
+.auto-keybar {
+  margin: 4px 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+}
+.keybar-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.keybar-row + .keybar-row { margin-top: 6px; }
+.keybar-key { font-size: 0.82rem; color: var(--muted); }
+.keybar-key b { color: var(--text); font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0.04em; }
+.keybar-label { color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; margin-right: 4px; }
+.keybar-bal b { font-size: 1.25rem; font-family: var(--font-display, inherit); color: var(--text); }
+.keybar-of { color: var(--muted); font-size: 0.78rem; margin-left: 4px; }
+.keybar-btn {
+  background: transparent; color: var(--muted); border: 1px solid var(--line);
+  border-radius: 8px; padding: 4px 10px; font-size: 0.74rem; cursor: pointer;
+}
+.keybar-btn:hover { color: var(--text); border-color: var(--red); }
+.keybar-meter { margin-top: 10px; height: 5px; border-radius: 5px; background: var(--line); overflow: hidden; }
+.keybar-meter i { display: block; height: 100%; width: 100%; border-radius: 5px; background: var(--green, #33d17a); transition: width .4s ease; }
+
+/* ---- service cards (auto) ---- */
+.svc-rate { color: var(--muted); font-size: 0.74rem; margin-top: 6px; }
+.fixed-svc-card.unavailable .fixed-svc-body { opacity: 0.55; }
+.comments-box { min-height: 104px; resize: vertical; line-height: 1.45; font-family: inherit; }
+.comments-count { display: block; margin-top: 6px; color: var(--muted); font-size: 0.74rem; }
+.auto-qty[readonly] { cursor: default; opacity: 0.85; }
+
+/* ---- delivery speed ---- */
+.auto-window { margin-top: 18px; }
+.window-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.window-btn {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 10px 6px; border-radius: 12px; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
+  font-family: inherit; transition: border-color .15s ease, background .15s ease, color .15s ease;
+}
+.window-btn b { font-size: 0.92rem; color: var(--text); }
+.window-btn small { font-size: 0.72rem; }
+.window-btn:hover { border-color: var(--red); }
+.window-btn.active { border-color: var(--red); background: var(--red-soft); color: var(--text); }
+
+/* ---- graph header extras ---- */
+.graph-head-right { display: flex; align-items: center; gap: 8px; }
+.regen-btn {
+  width: 30px; height: 30px; border-radius: 8px; padding: 0; cursor: pointer;
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+  font-size: 1.05rem; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+  transition: border-color .15s ease, transform .15s ease;
+}
+.regen-btn:hover { border-color: var(--red); }
+.regen-btn.spin { animation: regen-spin .55s ease; }
+@keyframes regen-spin { to { transform: rotate(360deg); } }
+.graph-meta { margin-top: 8px; color: var(--muted); font-size: 0.74rem; line-height: 1.4; }
+.legend-empty { color: var(--muted); font-size: 0.78rem; }
+
+/* ---- cost card ---- */
+#costBalanceAfter.negative { color: #ff5a73; }
+#submitOrderBtn:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .regen-btn.spin { animation: none; }
+}

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KM Panel — Admin</title>
+<title>The KM — Admin</title>
 <style>
   * { box-sizing: border-box; }
   body {
@@ -33,6 +33,7 @@
 <body>
 
 <div id="loginBox" class="box">
+  <div style="font-weight:800;font-size:1.05rem;margin-bottom:12px;background:linear-gradient(135deg,#6cb4ff,#a396ff);-webkit-background-clip:text;background-clip:text;color:transparent;">The KM <span style="color:#777;-webkit-text-fill-color:#777;font-weight:500;font-size:0.8rem;">Admin</span></div>
   <h1>Admin login</h1>
   <input id="passwordInput" type="password" placeholder="Password">
   <div id="loginError" class="error" style="display:none;"></div>
@@ -97,19 +98,38 @@
   document.getElementById('loginBtn').addEventListener('click', async () => {
     loginError.style.display = 'none';
     const password = document.getElementById('passwordInput').value;
-    const res = await fetch('/api/admin/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password })
-    });
-    if (res.ok) {
-      await loadKeys();
-    } else {
-      const data = await res.json().catch(() => ({}));
-      loginError.textContent = data.error || 'Login failed.';
+    let res;
+    try {
+      res = await fetch('/api/admin/auth', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+    } catch (e) {
+      loginError.textContent = 'Network error: ' + e.message;
       loginError.style.display = 'block';
+      return;
     }
+    if (res.ok) {
+      const opened = await loadKeys();
+      if (!opened) {
+        loginError.textContent = 'Password accepted, but the key list could not be loaded. Check ADMIN_SESSION_SECRET and the Supabase env vars in Vercel.';
+        loginError.style.display = 'block';
+      }
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    const hints = {
+      401: ' Check the password (it is the ADMIN_PASSWORD value in Vercel).',
+      404: ' /api/admin/auth is missing — deploy api/auto.js and vercel.json.',
+      429: ' Too many tries — wait about 10 minutes.',
+      500: ' ADMIN_PASSWORD or ADMIN_SESSION_SECRET is not set in Vercel.'
+    };
+    loginError.textContent = (data.error || 'Login failed.') + ' [HTTP ' + res.status + ']' + (hints[res.status] || '');
+    loginError.style.display = 'block';
   });
+  document.getElementById('passwordInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('loginBtn').click(); });
 
   document.getElementById('generateBtn').addEventListener('click', async () => {
     const durationMinutes = Number(document.getElementById('durationSelect').value);

@@ -712,352 +712,593 @@ extraServicesToggleBtn.addEventListener("click", () => {
 // Fully automatic: quantity/legs/duration/service-pool are all computed,
 // matching the reference panel's engagement-ratio formulas.
 // ==========================================
+// ==========================================
+// AUTO TAB — paid with a KM key (balance in USD).
+// The admin decides which panel/service delivers each type; the customer only sees quantities and the price.
+// ==========================================
 const FIXED_SERVICES = [
   { key: "views", emoji: "👁", label: "Views", primary: true, defaultOn: true, defaultQty: 5000 },
   { key: "likes", emoji: "❤️", label: "Like", defaultOn: true },
+  { key: "comments", emoji: "💬", label: "Comments", custom: true },
   { key: "share", emoji: "📤", label: "Share" },
   { key: "save", emoji: "🔖", label: "Save" },
-  { key: "comments", emoji: "💬", label: "Comments" },
   { key: "repost", emoji: "🔁", label: "Repost" },
 ];
 
 const MIN_VIEWS_QTY_AUTO = 5000;
 const ENGAGEMENT_PERCENT = { likes: 0.047, share: 0.034, comments: 0.0023, repost: 0.0057, save: 0.012 };
 const VIEWS_LEGS_PER_1000 = 5;
-const DEFAULT_MIN_GAP_MIN = 8;
-const DEFAULT_MAX_GAP_MIN = 14;
+const MAX_COMMENT_LINES = 500;
+const SYNC_AMOUNT_JITTER_PCT = 12; // other services follow the views timing; their per-part amounts vary a little
 
-let GAP_MODE = "auto"; // 'auto' (8-14min randomized) or 'manual' (fixed, no jitter)
+const AUTO_WINDOWS = {
+  pending: { label: "Pending", hint: "6–12 hrs", range: [360, 720] },
+  mid: { label: "Mid", hint: "12–24 hrs", range: [720, 1440] },
+  approved: { label: "Approved", hint: "24–48 hrs", range: [1440, 2880] },
+};
+const SHAPES = ["steady", "front", "back", "waves"];
+const SHAPE_LABELS = { steady: "Steady climb", front: "Fast start", back: "Slow build", waves: "In waves" };
+
+const AUTO_KEY_STORAGE = "km_auto_key";
+const AUTO_API = "/api/auto";
+
+function newClientToken() {
+  return window.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+}
+
+const AUTO = {
+  key: "",
+  info: null, // { masked, remaining, initial, status } once the key is verified
+  catalog: null, // { views: { rate, min, max }, ... } — only what the admin has switched on
+  window: "pending",
+  seed: Math.floor(Math.random() * 2147483647),
+  busy: false,
+  token: newClientToken(),
+  cardsBuilt: false,
+  plan: null,
+  cost: 0,
+  blockers: [],
+};
+try {
+  AUTO.key = localStorage.getItem(AUTO_KEY_STORAGE) || "";
+} catch {
+  /* storage blocked */
+}
 
 const autoFixedCardsEl = document.getElementById("autoFixedCards");
-const gapAutoBtn = document.getElementById("gapAutoBtn");
-const gapManualBtn = document.getElementById("gapManualBtn");
-const autoExtraLegsHead = document.getElementById("autoExtraLegsHead");
-const autoExtraLegsCount = document.getElementById("autoExtraLegsCount");
-const autoExtraLegsToggle = document.getElementById("autoExtraLegsToggle");
-const autoExtraLegsList = document.getElementById("autoExtraLegsList");
+const autoKeyGateEl = document.getElementById("autoKeyGate");
+const autoKeyInputEl = document.getElementById("autoKeyInput");
+const autoKeyUnlockBtn = document.getElementById("autoKeyUnlockBtn");
+const autoKeyMsgEl = document.getElementById("autoKeyMsg");
+const autoKeyMaskEl = document.getElementById("autoKeyMask");
+const autoKeyBalanceEl = document.getElementById("autoKeyBalance");
+const autoKeyOfEl = document.getElementById("autoKeyOf");
+const autoKeyMeterEl = document.getElementById("autoKeyMeter");
+const autoKeyChangeBtn = document.getElementById("autoKeyChangeBtn");
+const autoWindowRowEl = document.getElementById("autoWindowRow");
+const autoRegenBtn = document.getElementById("autoRegenBtn");
+const graphMetaEl = document.getElementById("graphMeta");
+const costKeyBalanceEl = document.getElementById("costKeyBalance");
+const costBalanceAfterEl = document.getElementById("costBalanceAfter");
 
-const legOverrides = {}; // { serviceKey: number|null } manual override from the Extra Services panel
-
-function calcEngagementLegs(qty, slotType) {
-  if (!qty || qty <= 0) return 1;
-  if (slotType === "comments") return Math.max(1, Math.round((qty / 10) * 7));
-  if (slotType === "repost") return Math.max(1, Math.round((qty / 100) * 15));
-  return Math.max(1, Math.round((qty / 100) * 7));
+// ---------- small helpers ----------
+function formatUsd(n) {
+  const v = Number(n) || 0;
+  return v >= 1 ? `$${v.toFixed(2)}` : `$${v.toFixed(3)}`;
 }
 
-function autoCalcLegs(qty, minQ, slotType) {
-  const safeMin = minQ || 1;
-  const maxPossible = Math.max(1, Math.floor((qty || 0) / safeMin));
-  if (maxPossible <= 1) {
-    if (slotType === "repost" && (qty || 0) >= safeMin * 2) return 2;
-    return 1;
-  }
-  return Math.max(1, Math.min(calcEngagementLegs(qty, slotType), maxPossible));
-}
-
-function getActiveGapRange() {
-  return GAP_MODE === "manual"
-    ? { min: DEFAULT_MIN_GAP_MIN, max: DEFAULT_MIN_GAP_MIN }
-    : { min: DEFAULT_MIN_GAP_MIN, max: DEFAULT_MAX_GAP_MIN };
-}
-
-function getServicePool(key) {
-  // Real connected panel -> use its live fetched services for this category automatically.
-  if (PANEL.connected && CATALOG[key] && CATALOG[key].length > 0) {
-    return CATALOG[key];
-  }
-  // No panel connected -> fall back to whichever demo service the person picked manually.
-  const manualSelect = document.getElementById(`manualSvc-${key}`);
-  if (manualSelect && manualSelect.value) {
-    const chosen = (DEMO_CATALOG[key] || []).find((s) => String(s.id) === manualSelect.value);
-    if (chosen) return [chosen];
-  }
-  return DEMO_CATALOG[key] || [];
-}
-
-function renderFixedCards() {
-  autoFixedCardsEl.innerHTML = FIXED_SERVICES.map((svc) => {
-    const showManualPicker = !PANEL.connected;
-    const demoOptions = (DEMO_CATALOG[svc.key] || [])
-      .map((s) => `<option value="${s.id}">${s.name}</option>`)
-      .join("");
-
-    const manualPickerHtml = showManualPicker
-      ? `
-        <label class="field">
-          <span class="field-label">Service (no panel connected — pick one)</span>
-          <select class="input full manual-svc-select" id="manualSvc-${svc.key}">${demoOptions}</select>
-        </label>
-      `
-      : `<div class="auto-service-note" id="autoServiceNote-${svc.key}"></div>`;
-
-    return `
-      <div class="fixed-svc-card ${svc.defaultOn ? "" : "disabled"}" id="svcCard-${svc.key}" style="--tc:${colorForCategory(svc.key)}">
-        <div class="fixed-svc-head">
-          <span class="fixed-svc-badge">${svc.emoji} ${svc.label}${svc.primary ? '<span class="fixed-svc-primary-tag">PRIMARY</span>' : ""}</span>
-          <label class="svc-toggle">
-            <input type="checkbox" class="svc-enable-toggle" data-key="${svc.key}" ${svc.defaultOn ? "checked" : ""}>
-            <span class="svc-toggle-track"></span>
-          </label>
-        </div>
-        <div class="fixed-svc-body">
-          <label class="field">
-            <span class="field-label">Quantity${svc.primary ? "" : " (auto-filled from Views — editable)"}</span>
-            <input class="input full auto-qty" type="number" min="1" value="${svc.defaultQty || ""}" placeholder="${svc.primary ? "" : "auto"}">
-          </label>
-          ${manualPickerHtml}
-          <div class="min-warning-line" id="minWarn-${svc.key}"></div>
-        </div>
-      </div>
-    `;
-  }).join("");
-
-  FIXED_SERVICES.forEach((svc) => {
-    const card = document.getElementById(`svcCard-${svc.key}`);
-    const toggle = card.querySelector(".svc-enable-toggle");
-    const qtyInput = card.querySelector(".auto-qty");
-    const manualSelect = card.querySelector(".manual-svc-select");
-
-    toggle.addEventListener("change", () => {
-      card.classList.toggle("disabled", !toggle.checked);
-      refreshAutoTab();
-    });
-
-    if (svc.primary) {
-      qtyInput.addEventListener("input", () => refreshAutoTab());
-    } else {
-      // manual edits to an auto-filled quantity stick until Views quantity changes again
-      qtyInput.addEventListener("input", () => {
-        qtyInput.dataset.userEdited = "1";
-        refreshAutoTab();
-      });
-    }
-
-    if (manualSelect) manualSelect.addEventListener("change", () => refreshAutoTab());
-  });
-}
-
-gapAutoBtn.addEventListener("click", () => {
-  GAP_MODE = "auto";
-  gapAutoBtn.classList.add("active");
-  gapManualBtn.classList.remove("active");
-  Object.keys(legOverrides).forEach((k) => delete legOverrides[k]);
-  refreshAutoTab();
-});
-gapManualBtn.addEventListener("click", () => {
-  GAP_MODE = "manual";
-  gapManualBtn.classList.add("active");
-  gapAutoBtn.classList.remove("active");
-  Object.keys(legOverrides).forEach((k) => delete legOverrides[k]);
-  refreshAutoTab();
-});
-
-autoExtraLegsToggle.addEventListener("click", () => {
-  const isOpen = autoExtraLegsList.style.display === "flex";
-  autoExtraLegsList.style.display = isOpen ? "none" : "flex";
-  autoExtraLegsToggle.classList.toggle("open", !isOpen);
-});
-
-function getFixedServiceInputs(key) {
-  const card = document.getElementById(`svcCard-${key}`);
-  return {
-    card,
-    enabled: card.querySelector(".svc-enable-toggle").checked,
-    qtyInput: card.querySelector(".auto-qty"),
-    qty: Math.max(0, parseInt(card.querySelector(".auto-qty").value, 10) || 0),
+function mulberry32(a) {
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
 
-function assignRoundRobin(pool, count) {
-  return Array.from({ length: count }, (_, i) => pool[i % pool.length]);
+// Same seed -> same numbers, so typing in a box doesn't reshuffle everything. The reload button picks a new seed.
+function autoRng(label) {
+  let h = AUTO.seed | 0;
+  for (let i = 0; i < label.length; i++) h = Math.imul(h ^ label.charCodeAt(i), 16777619);
+  return mulberry32(h >>> 0);
 }
 
-function generateAutoLegs(quantity, legsCount, totalMinutes, gapMode, minQty) {
-  const variance = gapMode === "manual" ? 0 : 22;
-  const base = Math.floor(quantity / legsCount);
-  let remaining = quantity;
-  let legs = [];
+function shapeWeight(shape, u, phase, waves) {
+  if (shape === "front") return 1.9 - 1.5 * u;
+  if (shape === "back") return 0.4 + 1.5 * u;
+  if (shape === "waves") return 1 + 0.55 * Math.sin(2 * Math.PI * (u * waves + phase));
+  return 1;
+}
 
-  for (let i = 0; i < legsCount; i++) {
-    const isLast = i === legsCount - 1;
-    let amount = isLast ? remaining : base;
-    if (!isLast && variance > 0) amount = Math.max(0, Math.round(jitter(amount, variance)));
-    remaining -= isLast ? 0 : amount;
+// ---------- key gate ----------
+function setAutoLocked(locked, message, kind) {
+  document.body.dataset.autoLocked = locked ? "1" : "0";
+  if (locked) {
+    autoKeyMsgEl.textContent = message || "";
+    autoKeyMsgEl.className = `connect-status ${kind || ""}`.trim();
+  }
+}
 
-    let minutesAt = legsCount > 1 ? (i / (legsCount - 1)) * totalMinutes : 0;
-    if (variance > 0 && i > 0 && !isLast) {
-      const avgGap = totalMinutes / (legsCount - 1 || 1);
-      minutesAt += (Math.random() * 2 - 1) * avgGap * (variance / 40);
+function renderAutoKeyBar() {
+  if (!AUTO.info) return;
+  const { masked, remaining, initial } = AUTO.info;
+  autoKeyMaskEl.textContent = masked;
+  autoKeyBalanceEl.textContent = formatUsd(remaining);
+  autoKeyOfEl.textContent = `of ${formatUsd(initial)}`;
+  autoKeyMeterEl.style.width = `${Math.max(0, Math.min(100, (remaining / (initial || 1)) * 100))}%`;
+}
+
+async function autoFetchCatalog() {
+  if (!AUTO.key) return { ok: false, code: "none" };
+  try {
+    const res = await fetch(`${AUTO_API}?route=key-catalog`, { headers: { "x-km-key": AUTO.key } });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.success) {
+      AUTO.info = data.key;
+      AUTO.catalog = data.services || {};
+      return { ok: true };
     }
-    minutesAt = Math.max(0, Math.round(minutesAt));
+    return { ok: false, code: data.code || "error", error: data.error || `Server error (HTTP ${res.status}).` };
+  } catch {
+    return { ok: false, code: "network", error: "Couldn't reach the server. Check your internet and try again." };
+  }
+}
 
-    legs.push({ index: i + 1, amount, minutesAt });
+function forgetAutoKey() {
+  AUTO.key = "";
+  AUTO.info = null;
+  AUTO.catalog = null;
+  try {
+    localStorage.removeItem(AUTO_KEY_STORAGE);
+  } catch {
+    /* ignore */
+  }
+}
+
+async function autoUnlock(rawKey) {
+  const key = String(rawKey || "").trim().toUpperCase().replace(/\s+/g, "");
+  if (!key) {
+    setAutoLocked(true, "Paste your key first.", "error");
+    return;
+  }
+  autoKeyUnlockBtn.disabled = true;
+  setAutoLocked(true, "Checking your key…", "");
+  AUTO.key = key;
+  const r = await autoFetchCatalog();
+  autoKeyUnlockBtn.disabled = false;
+
+  if (!r.ok) {
+    if (r.code !== "network") forgetAutoKey();
+    setAutoLocked(true, r.error, "error");
+    return;
+  }
+  try {
+    localStorage.setItem(AUTO_KEY_STORAGE, key);
+  } catch {
+    /* ignore */
+  }
+  autoKeyInputEl.value = "";
+  setAutoLocked(false);
+  renderAutoKeyBar();
+  renderFixedCards();
+  refreshAutoTab();
+  addLog(`Key unlocked (${AUTO.info.masked})`);
+}
+
+async function initAutoKey() {
+  if (!AUTO.key) {
+    setAutoLocked(true, "", "");
+    return;
+  }
+  setAutoLocked(true, "Checking your saved key…", "");
+  const r = await autoFetchCatalog();
+  if (r.ok) {
+    setAutoLocked(false);
+    renderAutoKeyBar();
+    renderFixedCards();
+    refreshAutoTab();
+    return;
+  }
+  if (r.code === "network") {
+    setAutoLocked(true, r.error, "error");
+    return;
+  }
+  forgetAutoKey();
+  setAutoLocked(true, r.error, "error");
+}
+
+autoKeyUnlockBtn.addEventListener("click", () => autoUnlock(autoKeyInputEl.value));
+autoKeyInputEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") autoUnlock(autoKeyInputEl.value);
+});
+autoKeyChangeBtn.addEventListener("click", () => {
+  forgetAutoKey();
+  setAutoLocked(true, "Enter a different key to continue.", "");
+  autoKeyInputEl.focus();
+});
+
+// ---------- cards ----------
+function getCommentLines() {
+  const el = document.getElementById("autoComments");
+  if (!el) return [];
+  return el.value.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+}
+
+function renderFixedCards() {
+  if (!AUTO.cardsBuilt) {
+    autoFixedCardsEl.innerHTML = FIXED_SERVICES.map((svc) => {
+      const commentsBox = svc.custom
+        ? `
+          <label class="field">
+            <span class="field-label">Your comments — one per line</span>
+            <textarea id="autoComments" class="input full comments-box" rows="4" spellcheck="false"
+              placeholder="Great content! 🔥&#10;Love this one&#10;So good, keep going"></textarea>
+            <span class="comments-count" id="commentsCount">0 comments</span>
+          </label>`
+        : "";
+      return `
+        <div class="fixed-svc-card ${svc.defaultOn ? "" : "disabled"}" id="svcCard-${svc.key}" style="--tc:${colorForCategory(svc.key)}">
+          <div class="fixed-svc-head">
+            <span class="fixed-svc-badge">${svc.emoji} ${svc.label}${svc.primary ? '<span class="fixed-svc-primary-tag">PRIMARY</span>' : ""}</span>
+            <label class="svc-toggle">
+              <input type="checkbox" class="svc-enable-toggle" data-key="${svc.key}" ${svc.defaultOn ? "checked" : ""}>
+              <span class="svc-toggle-track"></span>
+            </label>
+          </div>
+          <div class="fixed-svc-body">
+            <label class="field">
+              <span class="field-label">${svc.custom ? "Quantity (= number of comment lines)" : svc.primary ? "Quantity" : "Quantity (auto-filled from Views — editable)"}</span>
+              <input class="input full auto-qty" type="number" min="1" ${svc.custom ? "readonly" : ""}
+                value="${svc.defaultQty || ""}" placeholder="${svc.primary ? "" : "auto"}">
+            </label>
+            ${commentsBox}
+            <div class="svc-rate" id="rate-${svc.key}"></div>
+            <div class="min-warning-line" id="minWarn-${svc.key}"></div>
+          </div>
+        </div>`;
+    }).join("");
+
+    FIXED_SERVICES.forEach((svc) => {
+      const card = document.getElementById(`svcCard-${svc.key}`);
+      const toggle = card.querySelector(".svc-enable-toggle");
+      const qtyInput = card.querySelector(".auto-qty");
+      toggle.addEventListener("change", () => {
+        card.classList.toggle("disabled", !toggle.checked);
+        refreshAutoTab();
+      });
+      if (svc.custom) {
+        document.getElementById("autoComments").addEventListener("input", () => refreshAutoTab());
+      } else if (svc.primary) {
+        qtyInput.addEventListener("input", () => refreshAutoTab());
+      } else {
+        // a number typed by hand sticks until the Views quantity changes again
+        qtyInput.addEventListener("input", () => {
+          qtyInput.dataset.userEdited = "1";
+          refreshAutoTab();
+        });
+      }
+    });
+    const viewsInput = document.querySelector("#svcCard-views .auto-qty");
+    viewsInput.addEventListener("input", () => {
+      FIXED_SERVICES.filter((s) => !s.primary && !s.custom).forEach((s) => {
+        delete document.querySelector(`#svcCard-${s.key} .auto-qty`).dataset.userEdited;
+      });
+    });
+    AUTO.cardsBuilt = true;
   }
 
+  // availability comes from what the admin switched on
+  FIXED_SERVICES.forEach((svc) => {
+    const card = document.getElementById(`svcCard-${svc.key}`);
+    const toggle = card.querySelector(".svc-enable-toggle");
+    const info = AUTO.catalog ? AUTO.catalog[svc.key] : null;
+    const rateEl = document.getElementById(`rate-${svc.key}`);
+    if (AUTO.catalog && !info) {
+      toggle.checked = false;
+      toggle.disabled = true;
+      card.classList.add("disabled", "unavailable");
+      rateEl.textContent = "Not available right now";
+    } else {
+      toggle.disabled = false;
+      card.classList.remove("unavailable");
+      if (!toggle.checked) card.classList.add("disabled");
+      rateEl.textContent = info ? `${formatUsd(info.rate)} per 1,000` : "";
+    }
+  });
+}
+
+function getFixedServiceInputs(key) {
+  const card = document.getElementById(`svcCard-${key}`);
+  const svc = FIXED_SERVICES.find((s) => s.key === key);
+  const enabled = card.querySelector(".svc-enable-toggle").checked;
+  const qtyInput = card.querySelector(".auto-qty");
+  const qty = svc && svc.custom ? Math.min(getCommentLines().length, MAX_COMMENT_LINES) : Math.max(0, parseInt(qtyInput.value, 10) || 0);
+  return { card, enabled, qtyInput, qty };
+}
+
+// ---------- window buttons + reload ----------
+autoWindowRowEl.querySelectorAll(".window-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    AUTO.window = btn.dataset.window;
+    autoWindowRowEl.querySelectorAll(".window-btn").forEach((b) => b.classList.toggle("active", b === btn));
+    refreshAutoTab();
+  });
+});
+
+autoRegenBtn.addEventListener("click", () => {
+  AUTO.seed = Math.floor(Math.random() * 2147483647); // new timing, new pattern, new part sizes
+  autoRegenBtn.classList.remove("spin");
+  void autoRegenBtn.offsetWidth;
+  autoRegenBtn.classList.add("spin");
+  refreshAutoTab();
+});
+
+// ---------- leg generation ----------
+function generateWindowLegs(quantity, legsCount, durationMin, shape, phase, waves, rng, minQty) {
+  const n = Math.max(1, legsCount);
+  const gaps = Array.from({ length: Math.max(0, n - 1) }, () => 0.55 + rng() * 0.9);
+  const gapSum = gaps.reduce((a, b) => a + b, 0) || 1;
+  const start = rng() * Math.min(6, durationMin * 0.01);
+  const span = Math.max(1, durationMin - start - rng() * Math.min(20, durationMin * 0.02));
+
+  const times = [start];
+  let acc = 0;
+  gaps.forEach((g) => {
+    acc += g;
+    times.push(start + (acc / gapSum) * span);
+  });
+
+  const weights = times.map((_, i) => shapeWeight(shape, n > 1 ? i / (n - 1) : 0, phase, waves) * (0.78 + rng() * 0.44));
+  const wSum = weights.reduce((a, b) => a + b, 0) || 1;
+
+  let legs = times.map((t, i) => ({ index: i + 1, amount: Math.floor((quantity * weights[i]) / wSum), minutesAt: Math.round(t) }));
+  const diff = quantity - legs.reduce((a, l) => a + l.amount, 0);
+  legs[legs.length - 1].amount += diff;
   legs = legs.filter((l) => l.amount > 0);
-  legs.sort((a, b) => a.minutesAt - b.minutesAt);
-  legs.forEach((l, idx) => (l.index = idx + 1));
-
-  const sumSoFar = legs.reduce((a, l) => a + l.amount, 0);
-  if (legs.length > 0) legs[legs.length - 1].amount += quantity - sumSoFar;
-
   legs = enforceMinimum(legs, minQty);
+  legs.forEach((l, i) => (l.index = i + 1));
   return legs;
 }
 
-function refreshAutoTab() {
-  const viewsState = getFixedServiceInputs("views");
-  const viewsPool = getServicePool("views");
-  const viewsMinQty = Math.max(...viewsPool.map((s) => s.min), 1);
-
-  const viewsNoteEl = document.getElementById("autoServiceNote-views");
-  if (viewsNoteEl) {
-    viewsNoteEl.textContent =
-      viewsPool.length > 1
-        ? `🔀 Auto round-robin across ${viewsPool.length} connected services: ${viewsPool.map((s) => s.name).join(", ")}`
-        : viewsPool.length === 1
-        ? `Using: ${viewsPool[0].name}`
-        : "";
+// Other services reuse the views timings (views at minute 4 -> likes at minute 4 too).
+// A service with a small quantity can't fill every part, so it takes an evenly spread subset of those same moments.
+function generateSyncedLegs(quantity, minQty, reference, rng, jitterPct) {
+  const maxParts = minQty > 1 ? Math.max(1, Math.floor(quantity / minQty)) : reference.length;
+  let ref = reference;
+  if (maxParts < reference.length) {
+    ref = [];
+    for (let i = 0; i < maxParts; i++) ref.push(reference[maxParts === 1 ? 0 : Math.round((i * (reference.length - 1)) / (maxParts - 1))]);
   }
 
-  document.getElementById("minWarn-views").textContent =
-    viewsState.qty > 0 && viewsState.qty < MIN_VIEWS_QTY_AUTO
-      ? `⚠️ Below the ${MIN_VIEWS_QTY_AUTO.toLocaleString()} minimum — it'll be rounded up to ${MIN_VIEWS_QTY_AUTO.toLocaleString()} when the order is created.`
-      : "";
-
-  let viewsLegs = [];
-  let totalMinutes = 0;
-  const gapRange = getActiveGapRange();
-
-  if (viewsState.enabled && viewsState.qty > 0) {
-    const effectiveQty = Math.max(viewsState.qty, MIN_VIEWS_QTY_AUTO);
-    const legsCount = Math.max(1, Math.min(250, Math.round((effectiveQty / 1000) * VIEWS_LEGS_PER_1000)));
-    totalMinutes = Math.ceil(gapRange.min * legsCount * 1.3);
-
-    viewsLegs = generateAutoLegs(effectiveQty, legsCount, totalMinutes, GAP_MODE, viewsMinQty);
-    const assigned = assignRoundRobin(viewsPool, viewsLegs.length);
-    viewsLegs = viewsLegs.map((l, i) => ({ ...l, serviceLabel: "Views", category: "views", serviceId: assigned[i].id, baseUrl: assigned[i]._baseUrl, apiKey: assigned[i]._apiKey }));
-  }
-
-  let allLegs = [...viewsLegs];
-  const extraOverrideRows = [];
-
-  FIXED_SERVICES.filter((s) => !s.primary).forEach((svc) => {
-    const state = getFixedServiceInputs(svc.key);
-    const pool = getServicePool(svc.key);
-    const minQty = Math.max(...pool.map((s) => s.min), 1);
-
-    const noteEl = document.getElementById(`autoServiceNote-${svc.key}`);
-    if (noteEl) {
-      noteEl.textContent =
-        pool.length > 1
-          ? `🔀 Auto round-robin across ${pool.length} connected services`
-          : pool.length === 1
-          ? `Using: ${pool[0].name}`
-          : "";
-    }
-
-    // Auto-fill this service's quantity from the Views quantity, with a
-    // little randomness so re-entering the same Views number doesn't
-    // always produce the exact same numbers here.
-    if (!state.qtyInput.dataset.userEdited && viewsState.qty > 0) {
-      const basePct = ENGAGEMENT_PERCENT[svc.key] || 0.01;
-      const baseQty = Math.round(viewsState.qty * basePct);
-      const randomizedQty = Math.max(1, Math.round(jitter(baseQty, 20)));
-      state.qtyInput.value = randomizedQty;
-      state.qty = randomizedQty;
-    }
-
-    document.getElementById(`minWarn-${svc.key}`).textContent =
-      state.qty > 0 && state.qty < minQty ? `⚠️ Below minimum (${minQty.toLocaleString()}) for this service.` : "";
-
-    if (!state.enabled || state.qty <= 0 || viewsLegs.length === 0) return;
-
-    let legsCount = autoCalcLegs(state.qty, minQty, svc.key);
-    const override = legOverrides[svc.key];
-    if (override) legsCount = Math.min(override, legsCount);
-
-    const result = generateSyncedLegsWithReduction(
-      state.qty,
-      minQty,
-      viewsLegs.length > legsCount
-        ? viewsLegs.filter((_, i) => i % Math.ceil(viewsLegs.length / legsCount) === 0).slice(0, legsCount)
-        : viewsLegs
-    );
-    let legs = result.legs;
-
-    const assigned2 = assignRoundRobin(pool, legs.length);
-    legs = legs.map((l, i) => ({ ...l, serviceLabel: capitalize(svc.key), category: svc.key, serviceId: assigned2[i].id, baseUrl: assigned2[i]._baseUrl, apiKey: assigned2[i]._apiKey }));
-    allLegs = allLegs.concat(legs);
-
-    const naturalMax = Math.max(1, Math.floor(state.qty / minQty));
-    if (naturalMax < viewsLegs.length) {
-      extraOverrideRows.push({ key: svc.key, label: svc.label, emoji: svc.emoji, max: naturalMax, current: legs.length });
-    } else {
-      delete legOverrides[svc.key];
-    }
-  });
-
-  if (extraOverrideRows.length > 0) {
-    autoExtraLegsHead.style.display = "flex";
-    autoExtraLegsCount.textContent = `(${extraOverrideRows.length})`;
-    autoExtraLegsList.innerHTML = extraOverrideRows
-      .map((row) => {
-        const options = Array.from({ length: row.max }, (_, i) => i + 1)
-          .map((n) => `<option value="${n}" ${n === row.current ? "selected" : ""}>${n}</option>`)
-          .join("");
-        return `
-          <div class="svc-leg-select-row">
-            <span>${row.emoji} ${row.label} <span style="color:#ffb42d;font-weight:600;">(max ${row.max})</span></span>
-            <select data-key="${row.key}" class="leg-override-select">${options}</select>
-          </div>
-        `;
-      })
-      .join("");
-
-    autoExtraLegsList.querySelectorAll(".leg-override-select").forEach((sel) => {
-      sel.addEventListener("change", () => {
-        legOverrides[sel.dataset.key] = parseInt(sel.value, 10);
-        refreshAutoTab();
-      });
-    });
-  } else {
-    Object.keys(legOverrides).forEach((k) => delete legOverrides[k]);
-    autoExtraLegsHead.style.display = "none";
-    autoExtraLegsList.style.display = "none";
-    autoExtraLegsList.innerHTML = "";
-  }
-
-  window._autoTabLegs = allLegs;
-
-  let totalQty = 0;
-  let totalCost = 0;
-  allLegs.forEach((l) => {
-    totalQty += l.amount;
-    const pool = CATALOG[l.category] || DEMO_CATALOG[l.category] || [];
-    const rate = pool.length ? pool.reduce((a, s) => a + s.rate, 0) / pool.length : 10;
-    totalCost += (l.amount / 1000) * rate;
-  });
-  totalQtyEl.textContent = totalQty.toLocaleString();
-  totalCostEl.textContent = formatCost(totalCost);
-
-  updateGraph(allLegs);
+  const weights = ref.map((r) => r.amount * (jitterPct ? 1 + (rng() * 2 - 1) * (jitterPct / 100) : 1));
+  const wSum = weights.reduce((a, b) => a + b, 0) || 1;
+  let legs = ref.map((r, i) => ({ index: i + 1, amount: Math.floor((quantity * weights[i]) / wSum), minutesAt: r.minutesAt }));
+  legs[legs.length - 1].amount += quantity - legs.reduce((a, l) => a + l.amount, 0);
+  legs = legs.filter((l) => l.amount > 0);
+  legs = enforceMinimum(legs, minQty);
+  legs.forEach((l, i) => (l.index = i + 1));
+  return legs;
 }
 
-function computeAutoTabLegs(link) {
+// ---------- the plan ----------
+function refreshAutoTab() {
+  try {
+    computeAutoPlan();
+  } catch (err) {
+    console.error("Auto tab refresh failed:", err);
+    orderStatusEl.textContent = "Something went wrong while building the preview. Reload the page and try again.";
+    orderStatusEl.className = "connect-status error";
+  }
+}
+
+function computeAutoPlan() {
+  const services = AUTO.catalog || {};
+  const win = AUTO_WINDOWS[AUTO.window];
+  const durationMin = Math.round(win.range[0] + autoRng("duration")() * (win.range[1] - win.range[0]));
+  const shape = SHAPES[Math.floor(autoRng("shape")() * SHAPES.length)];
+  const shapeRng = autoRng("shape-params");
+  const phase = shapeRng();
+  const waves = 2 + Math.floor(shapeRng() * 3);
+
+  const blockers = [];
+  let allLegs = [];
+  const plan = {};
+
+  // ----- views (primary) -----
+  const viewsState = getFixedServiceInputs("views");
+  const viewsInfo = services.views;
+  let viewsLegs = [];
+  document.getElementById("minWarn-views").textContent = "";
+
+  if (AUTO.catalog && !viewsInfo) {
+    blockers.push("Views aren't available right now.");
+  } else if (viewsInfo && viewsState.enabled && viewsState.qty > 0) {
+    const effectiveQty = Math.max(viewsState.qty, MIN_VIEWS_QTY_AUTO);
+    if (viewsState.qty < MIN_VIEWS_QTY_AUTO) {
+      document.getElementById("minWarn-views").textContent = `⚠️ Minimum is ${MIN_VIEWS_QTY_AUTO.toLocaleString()} — it'll be rounded up to ${MIN_VIEWS_QTY_AUTO.toLocaleString()} when you order.`;
+    }
+    const legsCount = Math.max(1, Math.min(250, Math.round((effectiveQty / 1000) * VIEWS_LEGS_PER_1000)));
+    viewsLegs = generateWindowLegs(effectiveQty, legsCount, durationMin, shape, phase, waves, autoRng("views"), viewsInfo.min).map((l) => ({
+      ...l,
+      serviceLabel: "Views",
+      category: "views",
+    }));
+    plan.views = { legs: viewsLegs.map((l) => ({ amount: l.amount, minutesAt: l.minutesAt })) };
+    allLegs = allLegs.concat(viewsLegs);
+  }
+
+  // ----- everything else follows the views timing -----
+  FIXED_SERVICES.filter((s) => !s.primary).forEach((svc) => {
+    const state = getFixedServiceInputs(svc.key);
+    const info = services[svc.key];
+    const warnEl = document.getElementById(`minWarn-${svc.key}`);
+    warnEl.textContent = "";
+
+    if (svc.custom) {
+      const lines = getCommentLines();
+      state.qtyInput.value = lines.length ? lines.length : "";
+      const countEl = document.getElementById("commentsCount");
+      const raw = document.getElementById("autoComments").value.split(/\r?\n/).filter((s) => s.trim()).length;
+      countEl.textContent = `${Math.min(raw, MAX_COMMENT_LINES)} comment${raw === 1 ? "" : "s"}${raw > MAX_COMMENT_LINES ? ` (max ${MAX_COMMENT_LINES})` : ""}`;
+    } else if (!state.qtyInput.dataset.userEdited && viewsState.qty > 0) {
+      // auto-fill from views with a little randomness (same seed -> same number until you press reload)
+      const base = Math.round(Math.max(viewsState.qty, MIN_VIEWS_QTY_AUTO) * (ENGAGEMENT_PERCENT[svc.key] || 0.01));
+      const rng = autoRng(`qty-${svc.key}`);
+      const value = Math.max(1, Math.round(base * (1 + (rng() * 2 - 1) * 0.2)));
+      state.qtyInput.value = value;
+      state.qty = value;
+    }
+
+    if (!state.enabled) return;
+    if (!info) return; // card already says "not available"
+
+    if (svc.custom && state.qty === 0) {
+      warnEl.textContent = "⚠️ Write at least one comment (one per line).";
+      blockers.push("Comments: write at least one comment, or switch it off.");
+      return;
+    }
+    if (state.qty <= 0 || viewsLegs.length === 0) return;
+    if (state.qty < info.min) {
+      warnEl.textContent = `⚠️ Minimum for this service is ${info.min.toLocaleString()}.`;
+      blockers.push(`${svc.label}: minimum is ${info.min.toLocaleString()}.`);
+      return;
+    }
+
+    const legs = generateSyncedLegs(state.qty, info.min, viewsLegs, autoRng(`legs-${svc.key}`), svc.custom ? 0 : SYNC_AMOUNT_JITTER_PCT).map((l) => ({
+      ...l,
+      serviceLabel: capitalize(svc.key),
+      category: svc.key,
+    }));
+    plan[svc.key] = { legs: legs.map((l) => ({ amount: l.amount, minutesAt: l.minutesAt })) };
+    if (svc.custom) plan[svc.key].lines = getCommentLines();
+    allLegs = allLegs.concat(legs);
+  });
+
+  // ----- totals -----
+  let totalQty = 0;
+  let cost = 0;
+  const byCat = {};
+  allLegs.forEach((l) => {
+    totalQty += l.amount;
+    byCat[l.category] = (byCat[l.category] || 0) + l.amount;
+  });
+  Object.entries(byCat).forEach(([cat, qty]) => {
+    const info = services[cat];
+    if (info) cost += (qty / 1000) * info.rate;
+  });
+  cost = Math.round(cost * 10000) / 10000;
+
+  AUTO.plan = plan;
+  AUTO.cost = cost;
+  AUTO.blockers = blockers;
+  window._autoTabLegs = allLegs;
+
+  totalQtyEl.textContent = totalQty.toLocaleString();
+  totalCostEl.textContent = formatUsd(cost);
+  const remaining = AUTO.info ? AUTO.info.remaining : 0;
+  costKeyBalanceEl.textContent = formatUsd(remaining);
+  costBalanceAfterEl.textContent = formatUsd(Math.max(0, remaining - cost));
+  costBalanceAfterEl.classList.toggle("negative", cost > remaining);
+
+  graphMetaEl.textContent = viewsLegs.length
+    ? `Pattern: ${SHAPE_LABELS[shape]} · views spread over about ${formatMinutes(durationMin)} · ${viewsLegs.length} parts`
+    : "";
+  updateGraph(allLegs);
+
+  // ----- order button state -----
+  if (!AUTO.busy) {
+    let problem = "";
+    if (blockers.length) problem = blockers[0];
+    else if (!viewsLegs.length) problem = "";
+    else if (cost > remaining) problem = `This order costs ${formatUsd(cost)} but your key has ${formatUsd(remaining)}. Lower the quantity.`;
+
+    submitOrderBtn.disabled = Boolean(problem) || !viewsLegs.length;
+    if (ORDER_MODE === "auto") {
+      orderStatusEl.textContent = problem;
+      orderStatusEl.className = `connect-status ${problem ? "error" : ""}`.trim();
+    }
+  }
+}
+
+function computeAutoTabLegs() {
   refreshAutoTab();
-  const legs = window._autoTabLegs || [];
-  return legs.map((l) => ({
-    serviceId: l.serviceId,
-    link,
-    quantity: l.amount,
-    category: l.category,
-    serviceLabel: l.serviceLabel,
-    baseUrl: l.baseUrl,
-    apiKey: l.apiKey,
-    fireInMs: l.minutesAt * 60000,
-  }));
+  return window._autoTabLegs || [];
+}
+
+async function submitAutoKeyOrder() {
+  const link = document.getElementById("targetLink").value.trim();
+  const name = document.getElementById("scheduleName").value.trim() || "Untitled order";
+  const say = (text, kind) => {
+    orderStatusEl.textContent = text;
+    orderStatusEl.className = `connect-status ${kind || ""}`.trim();
+  };
+
+  if (!AUTO.info) return setAutoLocked(true, "Enter your key first.", "error");
+  if (!/^https?:\/\/\S+$/i.test(link)) return say("Add the post/reel link first (it must start with https://).", "error");
+
+  refreshAutoTab();
+  if (AUTO.blockers.length) return say(AUTO.blockers[0], "error");
+  if (!AUTO.plan.views) return say("Turn on Views and enter a quantity first.", "error");
+  if (AUTO.cost > AUTO.info.remaining) return say(`This order costs ${formatUsd(AUTO.cost)} but your key has ${formatUsd(AUTO.info.remaining)}.`, "error");
+
+  AUTO.busy = true;
+  submitOrderBtn.disabled = true;
+  say("Placing your order…", "");
+  try {
+    const res = await fetch(`${AUTO_API}?route=key-order`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-km-key": AUTO.key },
+      body: JSON.stringify({ name, link, window: AUTO.window, clientToken: AUTO.token, plan: AUTO.plan }),
+    });
+    const data = await res.json().catch(() => ({}));
+
+    if (res.ok && data.success) {
+      AUTO.token = newClientToken();
+      if (data.remaining !== null && data.remaining !== undefined) AUTO.info.remaining = data.remaining;
+      AUTO.info.status = data.status || AUTO.info.status;
+      renderAutoKeyBar();
+      addLog(`Order "${name}" placed with key ${AUTO.info.masked} — ${formatUsd(data.cost)} used`);
+      loadOrders();
+
+      if (data.status === "exhausted" || (data.remaining !== null && data.remaining < 0.01)) {
+        forgetAutoKey();
+        setAutoLocked(true, `✅ Order placed (${formatUsd(data.cost)} used). This key's balance is now finished — get a new key to order again.`, "ok");
+      } else {
+        const hint = AUTO_WINDOWS[AUTO.window].hint;
+        say(`✅ Order placed — ${formatUsd(data.cost)} used. It will arrive over about ${hint}. Balance left: ${formatUsd(data.remaining)}.`, "ok");
+      }
+      return;
+    }
+
+    if (data.code === "exhausted" || data.code === "revoked" || data.code === "invalid") {
+      forgetAutoKey();
+      setAutoLocked(true, data.error || "This key can't be used any more.", "error");
+    } else if (data.code === "insufficient") {
+      if (AUTO.info) AUTO.info.remaining = data.available;
+      renderAutoKeyBar();
+      say(`Not enough balance: this order needs ${formatUsd(data.required)} and you have ${formatUsd(data.available)}.`, "error");
+    } else {
+      if (data.remaining !== null && data.remaining !== undefined && AUTO.info) {
+        AUTO.info.remaining = data.remaining;
+        renderAutoKeyBar();
+      }
+      say(data.error || `Couldn't place the order (HTTP ${res.status}).`, "error");
+    }
+  } catch {
+    say("Couldn't reach the server. Your balance wasn't touched — please try again.", "error");
+  } finally {
+    AUTO.busy = false;
+    if (document.body.dataset.autoLocked !== "1") {
+      const keepText = orderStatusEl.textContent;
+      const keepClass = orderStatusEl.className;
+      refreshAutoTab();
+      if (keepText) {
+        orderStatusEl.textContent = keepText;
+        orderStatusEl.className = keepClass;
+      }
+    }
+  }
 }
 
 // ==========================================
@@ -1442,6 +1683,10 @@ function updateGraph(allLegs) {
   });
 
   drawMultiLineGraph(linesGroup, legend, legsByCategory, 600, 120, 8);
+
+  if (allLegs.length === 0) {
+    legend.innerHTML = '<span class="legend-empty">Enter a quantity to see how it will be delivered.</span>';
+  }
 }
 
 // ==========================================
@@ -1548,6 +1793,10 @@ saveGraphBtn.addEventListener("click", () => {
 // ORDER CREATION / SCHEDULING
 // ==========================================
 submitOrderBtn.addEventListener("click", async () => {
+  if (ORDER_MODE === "auto") {
+    await submitAutoKeyOrder();
+    return;
+  }
   const link = document.getElementById("targetLink").value.trim();
   const name = document.getElementById("scheduleName").value.trim() || "Untitled schedule";
 
@@ -1943,6 +2192,8 @@ const manualServicesBlock = document.getElementById("manualServicesBlock");
 
 function setOrderMode(mode) {
   ORDER_MODE = mode;
+  document.body.dataset.mode = mode;
+  if (mode === "manual") submitOrderBtn.disabled = false;
   autoModeBtn.classList.toggle("active", mode === "auto");
   manualModeBtn.classList.toggle("active", mode === "manual");
   autoServicesBlock.style.display = mode === "auto" ? "block" : "none";
@@ -2014,3 +2265,4 @@ growthSvgEl.addEventListener("mouseleave", () => {
 createServiceSlot();
 renderFixedCards();
 setOrderMode("auto");
+initAutoKey();
