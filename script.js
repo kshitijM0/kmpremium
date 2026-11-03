@@ -727,7 +727,7 @@ const FIXED_SERVICES = [
 
 const MIN_VIEWS_QTY_AUTO = 5000;
 const ENGAGEMENT_PERCENT = { likes: 0.047, share: 0.034, comments: 0.0023, repost: 0.0057, save: 0.012 };
-const VIEWS_LEGS_PER_1000 = 5;
+const AUTO_MAX_LEGS = 250; // most parts any one service is split into (same cap as Manual)
 const MAX_COMMENT_LINES = 500;
 const SYNC_AMOUNT_JITTER_PCT = 12; // other services follow the views timing; their per-part amounts vary a little
 
@@ -1035,13 +1035,34 @@ autoRegenBtn.addEventListener("click", () => {
 });
 
 // ---------- leg generation ----------
+// Every part is the service minimum plus a share of the rest, so a part is never below the minimum and,
+// when the quantity is small, stays close to it. That gives the most parts the service allows (max 250).
+function distributeExtra(count, base, quantity, weights) {
+  const extraTotal = Math.max(0, quantity - count * base);
+  const wSum = weights.reduce((a, b) => a + b, 0) || 1;
+  const amounts = weights.map((w) => base + Math.floor((extraTotal * w) / wSum));
+  let left = quantity - amounts.reduce((a, b) => a + b, 0);
+  for (let i = 0; left > 0; i = (i + 1) % amounts.length, left--) amounts[i] += 1;
+  return amounts;
+}
+
+// How many parts a quantity is split into: as many as the minimum allows, at most 250,
+// and enough parts that none goes over the service maximum.
+function autoPartsFor(quantity, minQty, maxQty) {
+  const lo = Math.max(1, minQty || 1);
+  let parts = Math.min(AUTO_MAX_LEGS, Math.max(1, Math.floor(quantity / lo)));
+  if (maxQty > 0) parts = Math.max(parts, Math.ceil(quantity / maxQty));
+  return Math.min(AUTO_MAX_LEGS, parts);
+}
+
 function generateWindowLegs(quantity, legsCount, durationMin, shape, phase, waves, rng, minQty) {
-  const n = Math.max(1, legsCount);
+  const base = Math.max(1, minQty || 1);
+  const n = Math.max(1, Math.min(legsCount, Math.floor(quantity / base) || 1));
+
   const gaps = Array.from({ length: Math.max(0, n - 1) }, () => 0.55 + rng() * 0.9);
   const gapSum = gaps.reduce((a, b) => a + b, 0) || 1;
   const start = rng() * Math.min(6, durationMin * 0.01);
   const span = Math.max(1, durationMin - start - rng() * Math.min(20, durationMin * 0.02));
-
   const times = [start];
   let acc = 0;
   gaps.forEach((g) => {
@@ -1050,35 +1071,23 @@ function generateWindowLegs(quantity, legsCount, durationMin, shape, phase, wave
   });
 
   const weights = times.map((_, i) => shapeWeight(shape, n > 1 ? i / (n - 1) : 0, phase, waves) * (0.78 + rng() * 0.44));
-  const wSum = weights.reduce((a, b) => a + b, 0) || 1;
-
-  let legs = times.map((t, i) => ({ index: i + 1, amount: Math.floor((quantity * weights[i]) / wSum), minutesAt: Math.round(t) }));
-  const diff = quantity - legs.reduce((a, l) => a + l.amount, 0);
-  legs[legs.length - 1].amount += diff;
-  legs = legs.filter((l) => l.amount > 0);
-  legs = enforceMinimum(legs, minQty);
-  legs.forEach((l, i) => (l.index = i + 1));
-  return legs;
+  const amounts = distributeExtra(n, base, quantity, weights);
+  return times.map((t, i) => ({ index: i + 1, amount: amounts[i], minutesAt: Math.round(t) }));
 }
 
-// Other services reuse the views timings (views at minute 4 -> likes at minute 4 too).
-// A service with a small quantity can't fill every part, so it takes an evenly spread subset of those same moments.
+// Other services reuse the views timings (views at minute 4 -> likes at minute 4 too) and the views shape:
+// where more views arrive, more of this service arrives too. A small quantity can't fill every part, so it
+// takes an evenly spread subset of those same moments.
 function generateSyncedLegs(quantity, minQty, reference, rng, jitterPct) {
-  const maxParts = minQty > 1 ? Math.max(1, Math.floor(quantity / minQty)) : reference.length;
-  let ref = reference;
-  if (maxParts < reference.length) {
-    ref = [];
-    for (let i = 0; i < maxParts; i++) ref.push(reference[maxParts === 1 ? 0 : Math.round((i * (reference.length - 1)) / (maxParts - 1))]);
-  }
+  const base = Math.max(1, minQty || 1);
+  const n = Math.max(1, Math.min(AUTO_MAX_LEGS, reference.length, Math.floor(quantity / base) || 1));
+
+  const ref = [];
+  for (let i = 0; i < n; i++) ref.push(reference[n === 1 ? 0 : Math.round((i * (reference.length - 1)) / (n - 1))]);
 
   const weights = ref.map((r) => r.amount * (jitterPct ? 1 + (rng() * 2 - 1) * (jitterPct / 100) : 1));
-  const wSum = weights.reduce((a, b) => a + b, 0) || 1;
-  let legs = ref.map((r, i) => ({ index: i + 1, amount: Math.floor((quantity * weights[i]) / wSum), minutesAt: r.minutesAt }));
-  legs[legs.length - 1].amount += quantity - legs.reduce((a, l) => a + l.amount, 0);
-  legs = legs.filter((l) => l.amount > 0);
-  legs = enforceMinimum(legs, minQty);
-  legs.forEach((l, i) => (l.index = i + 1));
-  return legs;
+  const amounts = distributeExtra(n, base, quantity, weights);
+  return ref.map((r, i) => ({ index: i + 1, amount: amounts[i], minutesAt: r.minutesAt }));
 }
 
 // ---------- the plan ----------
@@ -1118,14 +1127,22 @@ function computeAutoPlan() {
     if (viewsState.qty < MIN_VIEWS_QTY_AUTO) {
       document.getElementById("minWarn-views").textContent = `⚠️ Minimum is ${MIN_VIEWS_QTY_AUTO.toLocaleString()} — it'll be rounded up to ${MIN_VIEWS_QTY_AUTO.toLocaleString()} when you order.`;
     }
-    const legsCount = Math.max(1, Math.min(250, Math.round((effectiveQty / 1000) * VIEWS_LEGS_PER_1000)));
-    viewsLegs = generateWindowLegs(effectiveQty, legsCount, durationMin, shape, phase, waves, autoRng("views"), viewsInfo.min).map((l) => ({
-      ...l,
-      serviceLabel: "Views",
-      category: "views",
-    }));
-    plan.views = { legs: viewsLegs.map((l) => ({ amount: l.amount, minutesAt: l.minutesAt })) };
-    allLegs = allLegs.concat(viewsLegs);
+    if (effectiveQty < viewsInfo.min) {
+      document.getElementById("minWarn-views").textContent = `⚠️ Minimum for this service is ${viewsInfo.min.toLocaleString()}.`;
+      blockers.push(`Views: minimum is ${viewsInfo.min.toLocaleString()}.`);
+    } else if (viewsInfo.max > 0 && effectiveQty > viewsInfo.max * AUTO_MAX_LEGS) {
+      document.getElementById("minWarn-views").textContent = `⚠️ Too large for one order (max ${(viewsInfo.max * AUTO_MAX_LEGS).toLocaleString()}).`;
+      blockers.push("Views: quantity is too large for one order.");
+    } else {
+      const legsCount = autoPartsFor(effectiveQty, viewsInfo.min, viewsInfo.max);
+      viewsLegs = generateWindowLegs(effectiveQty, legsCount, durationMin, shape, phase, waves, autoRng("views"), viewsInfo.min).map((l) => ({
+        ...l,
+        serviceLabel: "Views",
+        category: "views",
+      }));
+      plan.views = { legs: viewsLegs.map((l) => ({ amount: l.amount, minutesAt: l.minutesAt })) };
+      allLegs = allLegs.concat(viewsLegs);
+    }
   }
 
   // ----- everything else follows the views timing -----
@@ -1162,6 +1179,12 @@ function computeAutoPlan() {
     if (state.qty < info.min) {
       warnEl.textContent = `⚠️ Minimum for this service is ${info.min.toLocaleString()}.`;
       blockers.push(`${svc.label}: minimum is ${info.min.toLocaleString()}.`);
+      return;
+    }
+
+    if (info.max > 0 && state.qty > info.max * AUTO_MAX_LEGS) {
+      warnEl.textContent = `⚠️ Too large for one order (max ${(info.max * AUTO_MAX_LEGS).toLocaleString()}).`;
+      blockers.push(`${svc.label}: quantity is too large for one order.`);
       return;
     }
 
