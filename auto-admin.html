@@ -600,7 +600,7 @@ async function searchServices() {
 
   async function loadMapping() {
     const res = await fetch(
-      '/api/auto?route=mapping?serviceType=' + encodeURIComponent(currentType),
+      '/api/auto?route=mapping&serviceType=' + encodeURIComponent(currentType),
       { credentials: 'include' }
     );
     const data = await res.json();
