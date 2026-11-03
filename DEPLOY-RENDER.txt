@@ -44,10 +44,18 @@ Step 3. Environment variables (Render > Environment). Sirf NAAM yahan likhe hain
         Missing variable ho to Render ke logs me "WARNING: these environment variables are not set"
         dikhega (sirf naam, value nahi).
 
-Step 3b. Supabase: supabase/auto-keys-schema.sql file repo me hai. Isse SQL Editor me TABHI chalao
-        jab tumhare Supabase me Auto-Key ke tables/functions pehle se na hon. Pehle Table Editor me
-        check karo (service_mapping, provider_services, auto_key_orders, auto_keys, auto_key_events).
-        Agar pehle se hain to dobara mat chalao.
+Step 3b. Supabase: NAYE service ko SAME Supabase project se jodo jo purani site use karti thi
+        (SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY dono usi project ke hone chahiye).
+        SUPABASE_URL aisa hona chahiye: https://xxxx.supabase.co  (end me /rest/v1 ya space nahi).
+        SUPABASE_SERVICE_ROLE_KEY = "service_role" key (anon key NAHI).
+        NAYA/khali Supabase project mat banao: repo ki SQL files me "orders" table kisi file me
+        create hi nahi hoti (sirf alter hoti hai), yaani purane project me wo kisi aur tareeke se bani thi.
+        Isliye hamesha purana (chalta hua) Supabase project hi use karo. Wahan purane tables pehle se hain,
+        SQL dobara chalane ki zaroorat nahi.
+        Table Editor me check karo ki api_providers aur auto_keys dono hain.
+
+        Agar Auto-Admin me "Could not load providers" aaye: Render > Logs me
+        "[providers] Supabase error while loading api_providers:" wali line dekho, wahi asli wajah hai.
 
 Step 4. Deploy hone ke baad NAYE URL par ye sab check karo:
         [ ] /healthz  -> "ok" dikhna chahiye
