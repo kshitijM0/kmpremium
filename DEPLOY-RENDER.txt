@@ -1,0 +1,70 @@
+THE KM - RENDER PAR DEPLOY KAISE KAREIN (Hinglish, step by step)
+=================================================================
+
+KYA FIX HUA
+-----------
+1. index.html se gate.css aur gate.js ke tags hata diye (ye files repo me thi hi nahi).
+   Inhi ki wajah se "Unexpected token '<'" error aa raha tha.
+2. build.js ab saari zaruri files dist/ me copy karta hai (auto-key.css, neon.css, auto-admin.html,
+   wallet.html, admin.html, panel-config.html, icons, manifest.json...). Pehle sirf 3 files jaati thi.
+3. build.js ab check karta hai ki HTML me jo bhi file likhi hai wo sach me maujood hai.
+   Kuch missing hua to build FAIL ho jayega (site chupchap toot-ti nahi).
+4. server.js: agar koi .js/.css/.png file nahi mili to ab 404 aayega, index.html nahi.
+   Saath me: crash-safe API handlers, /healthz, private files (.env, .sql, lib/, api/) block.
+5. package.json: javascript-obfuscator ab "dependencies" me hai, taaki Render par build hamesha chale.
+
+DEPLOY KARNE KA SAFE TARIKA (purani site ko haath mat lagana)
+--------------------------------------------------------------
+Step 1. GitHub par naya branch banao, jaise "fix-deploy", aur ye saari files us branch me upload karo.
+        (main branch abhi mat badlo.)
+
+Step 2. Render me NAYA Web Service banao (purana wala mat chhedo):
+        - Repo: kshitijM0/kmpremium
+        - Branch: fix-deploy
+        - Runtime: Node
+        - Build Command:  npm install && npm run build
+        - Start Command:  npm start
+        - Health Check Path: /healthz
+        - Plan: Free
+
+Step 3. Environment variables (Render > Environment). Sirf NAAM yahan likhe hain,
+        values apne purane Render/Vercel settings se copy karo. Values kisi ko bhejna mat.
+          SUPABASE_URL
+          SUPABASE_SERVICE_ROLE_KEY
+          ADMIN_PASSWORD
+          ADMIN_SESSION_SECRET
+          PROVIDER_ENCRYPTION_KEY
+          KEY_SESSION_SECRET
+          UPSTASH_REDIS_REST_URL
+          UPSTASH_REDIS_REST_TOKEN
+        Agar use karte ho to:
+          UPI_ID, UPI_NAME           (wallet deposit)
+          LINKVERTISE_ANTI_BYPASS_TOKEN   (free key claim)
+          RENDER_PROXY_URL           (khali chhodo to default https://kmpanel.onrender.com use hota hai)
+        Missing variable ho to Render ke logs me "WARNING: these environment variables are not set"
+        dikhega (sirf naam, value nahi).
+
+Step 3b. Supabase: supabase/auto-keys-schema.sql file repo me hai. Isse SQL Editor me TABHI chalao
+        jab tumhare Supabase me Auto-Key ke tables/functions pehle se na hon. Pehle Table Editor me
+        check karo (service_mapping, provider_services, auto_key_orders, auto_keys, auto_key_events).
+        Agar pehle se hain to dobara mat chalao.
+
+Step 4. Deploy hone ke baad NAYE URL par ye sab check karo:
+        [ ] /healthz  -> "ok" dikhna chahiye
+        [ ] Homepage khule, design sahi dikhe
+        [ ] Browser console (F12) me koi red error na ho
+        [ ] /style.css, /neon.css, /auto-key.css  -> CSS text dikhe (website nahi)
+        [ ] /script.js -> JavaScript dikhe
+        [ ] /auto-admin khule aur admin login chale
+        [ ] Key daal kar key catalog / order test
+        [ ] Scheduler (kmpanel.onrender.com) se order flow chale
+
+Step 5. Sab theek ho to: fix-deploy ko main me merge karo, ya purane Render service ka branch
+        change karke fix-deploy/main set karo. Tabhi purana URL (thekm.onrender.com) naye code par aayega.
+
+NOTE
+----
+- Render free service 15 min idle ke baad so jaati hai; pehla request 30-60 sec le sakta hai.
+- package-lock.json is ZIP me nahi hai (mere paas internet nahi tha). Pehli baar `npm install`
+  chalane par Render khud bana lega. Chaho to apne computer par `npm install` chala kar
+  package-lock.json commit kar do.
