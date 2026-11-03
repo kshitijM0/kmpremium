@@ -728,8 +728,9 @@ const FIXED_SERVICES = [
 const MIN_VIEWS_QTY_AUTO = 5000;
 const ENGAGEMENT_PERCENT = { likes: 0.047, share: 0.034, comments: 0.0023, repost: 0.0057, save: 0.012 };
 const AUTO_MAX_LEGS = 250; // most parts any one service is split into (same cap as Manual)
+const AUTO_LEG_HEADROOM = 1.15; // a part averages about 15% above the service minimum, so sizes can vary (e.g. 101, 112, 118, 131)
 const MAX_COMMENT_LINES = 500;
-const SYNC_AMOUNT_JITTER_PCT = 12; // other services follow the views timing; their per-part amounts vary a little
+const SYNC_AMOUNT_JITTER_PCT = 30; // other services follow the views timing; their per-part amounts vary a little
 
 const AUTO_WINDOWS = {
   pending: { label: "Pending", hint: "6–12 hrs", range: [360, 720] },
@@ -1050,7 +1051,7 @@ function distributeExtra(count, base, quantity, weights) {
 // and enough parts that none goes over the service maximum.
 function autoPartsFor(quantity, minQty, maxQty) {
   const lo = Math.max(1, minQty || 1);
-  let parts = Math.min(AUTO_MAX_LEGS, Math.max(1, Math.floor(quantity / lo)));
+  let parts = Math.min(AUTO_MAX_LEGS, Math.max(1, Math.floor(quantity / (lo * AUTO_LEG_HEADROOM))));
   if (maxQty > 0) parts = Math.max(parts, Math.ceil(quantity / maxQty));
   return Math.min(AUTO_MAX_LEGS, parts);
 }
@@ -1070,7 +1071,8 @@ function generateWindowLegs(quantity, legsCount, durationMin, shape, phase, wave
     times.push(start + (acc / gapSum) * span);
   });
 
-  const weights = times.map((_, i) => shapeWeight(shape, n > 1 ? i / (n - 1) : 0, phase, waves) * (0.78 + rng() * 0.44));
+  // wide per-part randomness, like Manual: some parts barely above the minimum, some well above
+  const weights = times.map((_, i) => shapeWeight(shape, n > 1 ? i / (n - 1) : 0, phase, waves) * (0.35 + rng() * 1.3));
   const amounts = distributeExtra(n, base, quantity, weights);
   return times.map((t, i) => ({ index: i + 1, amount: amounts[i], minutesAt: Math.round(t) }));
 }
@@ -1080,12 +1082,15 @@ function generateWindowLegs(quantity, legsCount, durationMin, shape, phase, wave
 // takes an evenly spread subset of those same moments.
 function generateSyncedLegs(quantity, minQty, reference, rng, jitterPct) {
   const base = Math.max(1, minQty || 1);
-  const n = Math.max(1, Math.min(AUTO_MAX_LEGS, reference.length, Math.floor(quantity / base) || 1));
+  const n = Math.max(1, Math.min(AUTO_MAX_LEGS, reference.length, Math.floor(quantity / (base * AUTO_LEG_HEADROOM)) || 1));
 
   const ref = [];
   for (let i = 0; i < n; i++) ref.push(reference[n === 1 ? 0 : Math.round((i * (reference.length - 1)) / (n - 1))]);
 
-  const weights = ref.map((r) => r.amount * (jitterPct ? 1 + (rng() * 2 - 1) * (jitterPct / 100) : 1));
+  // weight = how far each views part is above the smallest one, so a bigger views part still means a bigger
+  // part here, then a little randomness on top
+  const refMin = Math.min(...ref.map((r) => r.amount));
+  const weights = ref.map((r) => Math.max(1, r.amount - 0.8 * refMin) * (jitterPct ? 1 + (rng() * 2 - 1) * (jitterPct / 100) : 1));
   const amounts = distributeExtra(n, base, quantity, weights);
   return ref.map((r, i) => ({ index: i + 1, amount: amounts[i], minutesAt: r.minutesAt }));
 }
