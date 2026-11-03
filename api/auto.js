@@ -18,7 +18,20 @@ const routes = {
 };
 
 module.exports = async (req, res) => {
-  const route = req.query && req.query.route;
+  let route = req.query && req.query.route;
+
+  // Older admin pages sent "?route=mapping?serviceType=views" (a second "?" instead of "&").
+  // Understand that too, so a cached or old page keeps working.
+  if (typeof route === "string" && route.includes("?")) {
+    const [name, rest] = route.split("?");
+    const merged = { ...req.query, route: name };
+    new URLSearchParams(rest).forEach((value, key) => {
+      if (merged[key] === undefined) merged[key] = value;
+    });
+    Object.defineProperty(req, "query", { value: merged, configurable: true, writable: true });
+    route = name;
+  }
+
   const handler = routes[route];
   if (!handler) return res.status(404).json({ success: false, error: "Unknown route." });
   try {
