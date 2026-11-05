@@ -737,8 +737,17 @@ const AUTO_WINDOWS = {
   mid: { label: "Mid", hint: "12–24 hrs", range: [720, 1440] },
   approved: { label: "Approved", hint: "24–48 hrs", range: [1440, 2880] },
 };
-const SHAPES = ["steady", "front", "back", "waves"];
-const SHAPE_LABELS = { steady: "Steady climb", front: "Fast start", back: "Slow build", waves: "In waves" };
+// Same built-in curves Manual offers (GRAPH_PRESETS). About 80% of the time Auto uses one of the two "Organic" ones.
+function pickAutoPattern(rng) {
+  const r = rng();
+  if (r < 0.4) return "organic1"; // Morning Rise
+  if (r < 0.8) return "organic2"; // Evening Wave
+  return ["steady", "burst", "late"][Math.min(2, Math.floor(((r - 0.8) / 0.2) * 3))];
+}
+function patternLabel(key) {
+  return GRAPH_PRESETS[key].name.replace(/^Organic — /, "");
+}
+const AUTO_JITTER_PCT = 28; // per-part randomness on the curve, like Manual's randomness slider
 
 const AUTO_KEY_STORAGE = "km_auto_key";
 const AUTO_API = "/api/auto";
@@ -803,13 +812,6 @@ function autoRng(label) {
   let h = AUTO.seed | 0;
   for (let i = 0; i < label.length; i++) h = Math.imul(h ^ label.charCodeAt(i), 16777619);
   return mulberry32(h >>> 0);
-}
-
-function shapeWeight(shape, u, phase, waves) {
-  if (shape === "front") return 1.9 - 1.5 * u;
-  if (shape === "back") return 0.4 + 1.5 * u;
-  if (shape === "waves") return 1 + 0.55 * Math.sin(2 * Math.PI * (u * waves + phase));
-  return 1;
 }
 
 // ---------- key gate ----------
@@ -1029,6 +1031,10 @@ autoWindowRowEl.querySelectorAll(".window-btn").forEach((btn) => {
 
 autoRegenBtn.addEventListener("click", () => {
   AUTO.seed = Math.floor(Math.random() * 2147483647); // new timing, new pattern, new part sizes
+  // quantities of the other services are re-rolled too (a number typed by hand is replaced as well)
+  FIXED_SERVICES.filter((x) => !x.primary && !x.custom).forEach((x) => {
+    delete document.querySelector(`#svcCard-${x.key} .auto-qty`).dataset.userEdited;
+  });
   autoRegenBtn.classList.remove("spin");
   void autoRegenBtn.offsetWidth;
   autoRegenBtn.classList.add("spin");
@@ -1047,42 +1053,68 @@ function distributeExtra(count, base, quantity, weights) {
   return amounts;
 }
 
-// How many parts a quantity is split into: as many as the minimum allows, at most 250,
-// and enough parts that none goes over the service maximum.
-function autoPartsFor(quantity, minQty, maxQty) {
+// How many parts a quantity starts out as: as many as the minimum allows (at most 250), never so few that a
+// part goes over the service maximum. `headroom` changes on every reload, so the number of parts changes too.
+function autoPartsFor(quantity, minQty, maxQty, headroom) {
   const lo = Math.max(1, minQty || 1);
-  let parts = Math.min(AUTO_MAX_LEGS, Math.max(1, Math.floor(quantity / (lo * AUTO_LEG_HEADROOM))));
+  let parts = Math.min(AUTO_MAX_LEGS, Math.max(1, Math.floor(quantity / (lo * (headroom || AUTO_LEG_HEADROOM)))));
   if (maxQty > 0) parts = Math.max(parts, Math.ceil(quantity / maxQty));
   return Math.min(AUTO_MAX_LEGS, parts);
 }
 
-function generateWindowLegs(quantity, legsCount, durationMin, shape, phase, waves, rng, minQty) {
-  const base = Math.max(1, minQty || 1);
-  const n = Math.max(1, Math.min(legsCount, Math.floor(quantity / base) || 1));
-
-  const gaps = Array.from({ length: Math.max(0, n - 1) }, () => 0.55 + rng() * 0.9);
-  const gapSum = gaps.reduce((a, b) => a + b, 0) || 1;
-  const start = rng() * Math.min(6, durationMin * 0.01);
-  const span = Math.max(1, durationMin - start - rng() * Math.min(20, durationMin * 0.02));
-  const times = [start];
-  let acc = 0;
-  gaps.forEach((g) => {
-    acc += g;
-    times.push(start + (acc / gapSum) * span);
+// A part above the service maximum is split in two or more at the same moment.
+function capToMax(legs, maxQty) {
+  if (!maxQty || maxQty <= 0) return legs;
+  const out = [];
+  legs.forEach((l) => {
+    if (l.amount <= maxQty) return out.push(l);
+    const pieces = Math.ceil(l.amount / maxQty);
+    const each = Math.floor(l.amount / pieces);
+    for (let i = 0; i < pieces; i++) out.push({ ...l, amount: i === pieces - 1 ? l.amount - each * (pieces - 1) : each });
   });
+  out.forEach((l, i) => (l.index = i + 1));
+  return out;
+}
 
-  // wide per-part randomness, like Manual: some parts barely above the minimum, some well above
-  const weights = times.map((_, i) => shapeWeight(shape, n > 1 ? i / (n - 1) : 0, phase, waves) * (0.35 + rng() * 1.3));
-  const amounts = distributeExtra(n, base, quantity, weights);
-  return times.map((t, i) => ({ index: i + 1, amount: amounts[i], minutesAt: Math.round(t) }));
+// Views follow one of the built-in curves, the same way Manual does it: the curve is stretched over the delivery
+// window, each part gets its share of the quantity plus some randomness, and parts under the service minimum are
+// folded into their neighbour.
+function generateCurveLegs(quantity, durationMin, curvePoints, rng, minQty, jitterPct, headroom) {
+  const base = Math.max(1, minQty || 1);
+  const count = autoPartsFor(quantity, base, 0, headroom);
+  const used = resampleCurve(curvePoints, count);
+  const wSum = used.reduce((a, b) => a + b, 0) || 1;
+  const avgGap = used.length > 1 ? durationMin / (used.length - 1) : durationMin;
+
+  const build = (pct) => {
+    let remaining = quantity;
+    const legs = used.map((w, i) => {
+      const isLast = i === used.length - 1;
+      let amount = isLast ? remaining : Math.round((w / wSum) * quantity);
+      if (!isLast && pct > 0) amount = Math.max(0, Math.round(amount * (1 + (rng() * 2 - 1) * (pct / 100))));
+      remaining -= isLast ? 0 : amount;
+      let minutesAt = used.length > 1 ? (i / (used.length - 1)) * durationMin : 0;
+      if (i > 0 && !isLast) minutesAt += (rng() * 2 - 1) * avgGap * 0.45;
+      return { index: i + 1, amount, minutesAt: Math.max(0, Math.round(minutesAt)) };
+    });
+    return legs;
+  };
+
+  let legs = build(jitterPct);
+  if (legs.some((l) => l.amount < 0)) legs = build(0); // the randomness overshot -> redo it without, total stays exact
+  legs.sort((a, b) => a.minutesAt - b.minutesAt);
+  legs = legs.filter((l) => l.amount > 0);
+  legs = enforceMinimum(legs, base);
+  legs.forEach((l, i) => (l.index = i + 1));
+  return legs;
 }
 
 // Other services reuse the views timings (views at minute 4 -> likes at minute 4 too) and the views shape:
 // where more views arrive, more of this service arrives too. A small quantity can't fill every part, so it
 // takes an evenly spread subset of those same moments.
-function generateSyncedLegs(quantity, minQty, reference, rng, jitterPct) {
+function generateSyncedLegs(quantity, minQty, reference, rng, jitterPct, headroom) {
   const base = Math.max(1, minQty || 1);
-  const n = Math.max(1, Math.min(AUTO_MAX_LEGS, reference.length, Math.floor(quantity / (base * AUTO_LEG_HEADROOM)) || 1));
+  const n = Math.max(1, Math.min(AUTO_MAX_LEGS, reference.length, Math.floor(quantity / (base * (headroom || AUTO_LEG_HEADROOM))) || 1));
 
   const ref = [];
   for (let i = 0; i < n; i++) ref.push(reference[n === 1 ? 0 : Math.round((i * (reference.length - 1)) / (n - 1))]);
@@ -1110,10 +1142,7 @@ function computeAutoPlan() {
   const services = AUTO.catalog || {};
   const win = AUTO_WINDOWS[AUTO.window];
   const durationMin = Math.round(win.range[0] + autoRng("duration")() * (win.range[1] - win.range[0]));
-  const shape = SHAPES[Math.floor(autoRng("shape")() * SHAPES.length)];
-  const shapeRng = autoRng("shape-params");
-  const phase = shapeRng();
-  const waves = 2 + Math.floor(shapeRng() * 3);
+  const pattern = pickAutoPattern(autoRng("pattern"));
 
   const blockers = [];
   let allLegs = [];
@@ -1139,8 +1168,11 @@ function computeAutoPlan() {
       document.getElementById("minWarn-views").textContent = `⚠️ Too large for one order (max ${(viewsInfo.max * AUTO_MAX_LEGS).toLocaleString()}).`;
       blockers.push("Views: quantity is too large for one order.");
     } else {
-      const legsCount = autoPartsFor(effectiveQty, viewsInfo.min, viewsInfo.max);
-      viewsLegs = generateWindowLegs(effectiveQty, legsCount, durationMin, shape, phase, waves, autoRng("views"), viewsInfo.min).map((l) => ({
+      const headroom = 1 + autoRng("headroom-views")() * 0.8; // 1.0-1.8x the minimum -> a different number of parts each reload
+      viewsLegs = capToMax(
+        generateCurveLegs(effectiveQty, durationMin, GRAPH_PRESETS[pattern].points, autoRng("views"), viewsInfo.min, AUTO_JITTER_PCT, headroom),
+        viewsInfo.max
+      ).map((l) => ({
         ...l,
         serviceLabel: "Views",
         category: "views",
@@ -1167,7 +1199,7 @@ function computeAutoPlan() {
       // auto-fill from views with a little randomness (same seed -> same number until you press reload)
       const base = Math.round(Math.max(viewsState.qty, MIN_VIEWS_QTY_AUTO) * (ENGAGEMENT_PERCENT[svc.key] || 0.01));
       const rng = autoRng(`qty-${svc.key}`);
-      const value = Math.max(1, Math.round(base * (1 + (rng() * 2 - 1) * 0.2)));
+      const value = Math.max(1, Math.round(base * (1 + (rng() * 2 - 1) * 0.35)));
       state.qtyInput.value = value;
       state.qty = value;
     }
@@ -1193,7 +1225,11 @@ function computeAutoPlan() {
       return;
     }
 
-    const legs = generateSyncedLegs(state.qty, info.min, viewsLegs, autoRng(`legs-${svc.key}`), svc.custom ? 0 : SYNC_AMOUNT_JITTER_PCT).map((l) => ({
+    const headroom = 1 + autoRng(`headroom-${svc.key}`)() * 0.8;
+    const legs = capToMax(
+      generateSyncedLegs(state.qty, info.min, viewsLegs, autoRng(`legs-${svc.key}`), svc.custom ? 0 : SYNC_AMOUNT_JITTER_PCT, headroom),
+      info.max
+    ).map((l) => ({
       ...l,
       serviceLabel: capitalize(svc.key),
       category: svc.key,
@@ -1230,7 +1266,7 @@ function computeAutoPlan() {
   costBalanceAfterEl.classList.toggle("negative", cost > remaining);
 
   graphMetaEl.textContent = viewsLegs.length
-    ? `Pattern: ${SHAPE_LABELS[shape]} · views spread over about ${formatMinutes(durationMin)} · ${viewsLegs.length} parts`
+    ? `Pattern: ${patternLabel(pattern)} · views spread over about ${formatMinutes(durationMin)} · ${viewsLegs.length} parts`
     : "";
   updateGraph(allLegs);
 
@@ -1294,7 +1330,7 @@ async function submitAutoKeyOrder() {
         setAutoLocked(true, `✅ Order placed (${formatUsd(data.cost)} used). This key's balance is now finished — get a new key to order again.`, "ok");
       } else {
         const hint = AUTO_WINDOWS[AUTO.window].hint;
-        say(`✅ Order placed — ${formatUsd(data.cost)} used. It will arrive over about ${hint}. Balance left: ${formatUsd(data.remaining)}.`, "ok");
+        say(`✅ Order placed — ${formatUsd(data.cost)} used. It will arrive over about ${hint}. Balance left: ${formatUsd(data.remaining)}.${data.warning ? " " + data.warning : ""}`, "ok");
       }
       return;
     }
