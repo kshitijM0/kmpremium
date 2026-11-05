@@ -737,24 +737,15 @@ const AUTO_WINDOWS = {
   mid: { label: "Mid", hint: "12–24 hrs", range: [720, 1440] },
   approved: { label: "Approved", hint: "24–48 hrs", range: [1440, 2880] },
 };
-// Half of the reloads use one of Manual's two "Organic" curves (Morning Rise / Evening Wave, 25% each).
-// The other half use the earlier Auto shapes below (steady climb, fast start, slow build, in waves).
+// The Auto shapes: each reload picks one of these four (equal chance).
 const OLD_SHAPES = ["steady", "front", "back", "waves"];
 const SHAPE_LABELS = { steady: "Steady climb", front: "Fast start", back: "Slow build", waves: "In waves" };
 
 function pickAutoPattern(rng) {
-  const r = rng();
-  if (r < 0.25) return "organic1"; // Morning Rise
-  if (r < 0.5) return "organic2"; // Evening Wave
-  return OLD_SHAPES[Math.min(OLD_SHAPES.length - 1, Math.floor(((r - 0.5) / 0.5) * OLD_SHAPES.length))];
-}
-// only the two "organic" keys are Manual curves; "steady" etc. below are the earlier Auto shapes
-// (careful: Manual also has a preset called "steady" — that one is NOT used here)
-function isOrganicPattern(key) {
-  return key === "organic1" || key === "organic2";
+  return OLD_SHAPES[Math.min(OLD_SHAPES.length - 1, Math.floor(rng() * OLD_SHAPES.length))];
 }
 function patternLabel(key) {
-  return isOrganicPattern(key) ? GRAPH_PRESETS[key].name.replace(/^Organic — /, "") : SHAPE_LABELS[key];
+  return SHAPE_LABELS[key];
 }
 function shapeWeight(shape, u, phase, waves) {
   if (shape === "front") return 1.9 - 1.5 * u;
@@ -762,7 +753,6 @@ function shapeWeight(shape, u, phase, waves) {
   if (shape === "waves") return 1 + 0.55 * Math.sin(2 * Math.PI * (u * waves + phase));
   return 1;
 }
-const AUTO_JITTER_PCT = 28; // per-part randomness on the curve, like Manual's randomness slider
 
 const AUTO_KEY_STORAGE = "km_auto_key";
 const AUTO_API = "/api/auto";
@@ -1113,39 +1103,6 @@ function generateWindowLegs(quantity, legsCount, durationMin, shape, phase, wave
   return times.map((t, i) => ({ index: i + 1, amount: amounts[i], minutesAt: Math.round(t) }));
 }
 
-// Views follow one of the built-in curves, the same way Manual does it: the curve is stretched over the delivery
-// window, each part gets its share of the quantity plus some randomness, and parts under the service minimum are
-// folded into their neighbour.
-function generateCurveLegs(quantity, durationMin, curvePoints, rng, minQty, jitterPct, headroom) {
-  const base = Math.max(1, minQty || 1);
-  const count = autoPartsFor(quantity, base, 0, headroom);
-  const used = resampleCurve(curvePoints, count);
-  const wSum = used.reduce((a, b) => a + b, 0) || 1;
-  const avgGap = used.length > 1 ? durationMin / (used.length - 1) : durationMin;
-
-  const build = (pct) => {
-    let remaining = quantity;
-    const legs = used.map((w, i) => {
-      const isLast = i === used.length - 1;
-      let amount = isLast ? remaining : Math.round((w / wSum) * quantity);
-      if (!isLast && pct > 0) amount = Math.max(0, Math.round(amount * (1 + (rng() * 2 - 1) * (pct / 100))));
-      remaining -= isLast ? 0 : amount;
-      let minutesAt = used.length > 1 ? (i / (used.length - 1)) * durationMin : 0;
-      if (i > 0 && !isLast) minutesAt += (rng() * 2 - 1) * avgGap * 0.45;
-      return { index: i + 1, amount, minutesAt: Math.max(0, Math.round(minutesAt)) };
-    });
-    return legs;
-  };
-
-  let legs = build(jitterPct);
-  if (legs.some((l) => l.amount < 0)) legs = build(0); // the randomness overshot -> redo it without, total stays exact
-  legs.sort((a, b) => a.minutesAt - b.minutesAt);
-  legs = legs.filter((l) => l.amount > 0);
-  legs = enforceMinimum(legs, base);
-  legs.forEach((l, i) => (l.index = i + 1));
-  return legs;
-}
-
 // Other services reuse the views timings (views at minute 4 -> likes at minute 4 too) and the views shape:
 // where more views arrive, more of this service arrives too. A small quantity can't fill every part, so it
 // takes an evenly spread subset of those same moments.
@@ -1207,18 +1164,16 @@ function computeAutoPlan() {
       blockers.push("Views: quantity is too large for one order.");
     } else {
       const headroom = 1 + autoRng("headroom-views")() * 0.8; // 1.0-1.8x the minimum -> a different number of parts each reload
-      const raw = isOrganicPattern(pattern)
-        ? generateCurveLegs(effectiveQty, durationMin, GRAPH_PRESETS[pattern].points, autoRng("views"), viewsInfo.min, AUTO_JITTER_PCT, headroom)
-        : generateWindowLegs(
-            effectiveQty,
-            autoPartsFor(effectiveQty, viewsInfo.min, viewsInfo.max, headroom),
-            durationMin,
-            pattern,
-            shapeRng(),
-            2 + Math.floor(shapeRng() * 3),
-            autoRng("views"),
-            viewsInfo.min
-          );
+      const raw = generateWindowLegs(
+        effectiveQty,
+        autoPartsFor(effectiveQty, viewsInfo.min, viewsInfo.max, headroom),
+        durationMin,
+        pattern,
+        shapeRng(),
+        2 + Math.floor(shapeRng() * 3),
+        autoRng("views"),
+        viewsInfo.min
+      );
       viewsLegs = capToMax(raw, viewsInfo.max).map((l) => ({
         ...l,
         serviceLabel: "Views",
