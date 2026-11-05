@@ -1,6 +1,8 @@
 SETUP — do these in order (about 10 minutes)
 
-1) SUPABASE   -> SQL Editor -> New query -> paste supabase/auto-keys-schema.sql -> Run.
+1) SUPABASE   -> SQL Editor -> New query -> paste and Run, one file at a time:
+                 supabase/auto-keys-schema.sql      (customer keys with USD balance)
+                 supabase/auto-comment-jobs.sql     (queue for customers' custom comments)
 2) GITHUB     -> upload everything in this folder to your repo, keeping the folders:
                  api/auto.js, lib/auto/*, supabase/*, vercel.json,
                  index.html, script.js, style.css (unchanged), auto-key.css, neon.css,
@@ -18,3 +20,15 @@ SETUP — do these in order (about 10 minutes)
                  c) Customer Keys: type the dollars (1, 2, 5...) -> Create key -> send it to the customer.
 5) CUSTOMER   -> site -> Order -> Auto -> pastes the key -> orders. Balance drops with every order;
                  at $0 the key deactivates by itself.
+
+CUSTOM COMMENTS (important)
+ - The external scheduler (kmpanel.onrender.com) cannot carry the comment text, so views/likes/share/save/repost
+   still go through it, but the customer's comments are queued in Supabase (auto_comment_jobs) and sent to the
+   provider by THIS server (lib/auto/commentWorker.js, started from server.js) at the planned time.
+ - The server must be awake at that time. On Render's Free plan a service sleeps after ~15 minutes without visits,
+   and comments would go out late. Use a paid instance, or ping https://YOURSITE/healthz every 10 minutes
+   (for example with UptimeRobot) to keep it awake.
+ - Render logs show "[comments] custom-comments worker started" at boot. If you see
+   "[comments] worker error ... did you run supabase/auto-comment-jobs.sql?" the SQL step was skipped.
+ - A comment part that fails after 3 tries is refunded to the customer's key automatically.
+   Look at Supabase -> Table Editor -> auto_comment_jobs (status, error, provider_order_id) to follow each part.

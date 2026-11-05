@@ -179,11 +179,22 @@ process.on("unhandledRejection", (reason) => {
 
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`The KM server listening on port ${PORT}`);
+  // Sends customers' custom comments to the provider at their scheduled time (see lib/auto/commentWorker.js).
+  try {
+    require("./lib/auto/commentWorker").start();
+  } catch (error) {
+    console.error("[comments] worker could not start:", error.message);
+  }
 });
 
 // Render sends SIGTERM when it replaces the service with a new deploy: finish current requests first.
 process.on("SIGTERM", () => {
   console.log("[server] SIGTERM received, shutting down");
+  try {
+    require("./lib/auto/commentWorker").stop();
+  } catch {
+    /* ignore */
+  }
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 10000).unref();
 });
