@@ -737,15 +737,30 @@ const AUTO_WINDOWS = {
   mid: { label: "Mid", hint: "12–24 hrs", range: [720, 1440] },
   approved: { label: "Approved", hint: "24–48 hrs", range: [1440, 2880] },
 };
-// Same built-in curves Manual offers (GRAPH_PRESETS). About 80% of the time Auto uses one of the two "Organic" ones.
+// Half of the reloads use one of Manual's two "Organic" curves (Morning Rise / Evening Wave, 25% each).
+// The other half use the earlier Auto shapes below (steady climb, fast start, slow build, in waves).
+const OLD_SHAPES = ["steady", "front", "back", "waves"];
+const SHAPE_LABELS = { steady: "Steady climb", front: "Fast start", back: "Slow build", waves: "In waves" };
+
 function pickAutoPattern(rng) {
   const r = rng();
-  if (r < 0.4) return "organic1"; // Morning Rise
-  if (r < 0.8) return "organic2"; // Evening Wave
-  return ["steady", "burst", "late"][Math.min(2, Math.floor(((r - 0.8) / 0.2) * 3))];
+  if (r < 0.25) return "organic1"; // Morning Rise
+  if (r < 0.5) return "organic2"; // Evening Wave
+  return OLD_SHAPES[Math.min(OLD_SHAPES.length - 1, Math.floor(((r - 0.5) / 0.5) * OLD_SHAPES.length))];
+}
+// only the two "organic" keys are Manual curves; "steady" etc. below are the earlier Auto shapes
+// (careful: Manual also has a preset called "steady" — that one is NOT used here)
+function isOrganicPattern(key) {
+  return key === "organic1" || key === "organic2";
 }
 function patternLabel(key) {
-  return GRAPH_PRESETS[key].name.replace(/^Organic — /, "");
+  return isOrganicPattern(key) ? GRAPH_PRESETS[key].name.replace(/^Organic — /, "") : SHAPE_LABELS[key];
+}
+function shapeWeight(shape, u, phase, waves) {
+  if (shape === "front") return 1.9 - 1.5 * u;
+  if (shape === "back") return 0.4 + 1.5 * u;
+  if (shape === "waves") return 1 + 0.55 * Math.sin(2 * Math.PI * (u * waves + phase));
+  return 1;
 }
 const AUTO_JITTER_PCT = 28; // per-part randomness on the curve, like Manual's randomness slider
 
@@ -1076,6 +1091,28 @@ function capToMax(legs, maxQty) {
   return out;
 }
 
+// The earlier Auto generator: random gaps across the window, every part is the service minimum plus a share of the
+// rest following the chosen shape, with wide per-part randomness.
+function generateWindowLegs(quantity, legsCount, durationMin, shape, phase, waves, rng, minQty) {
+  const base = Math.max(1, minQty || 1);
+  const n = Math.max(1, Math.min(legsCount, Math.floor(quantity / base) || 1));
+
+  const gaps = Array.from({ length: Math.max(0, n - 1) }, () => 0.55 + rng() * 0.9);
+  const gapSum = gaps.reduce((a, b) => a + b, 0) || 1;
+  const start = rng() * Math.min(6, durationMin * 0.01);
+  const span = Math.max(1, durationMin - start - rng() * Math.min(20, durationMin * 0.02));
+  const times = [start];
+  let acc = 0;
+  gaps.forEach((g) => {
+    acc += g;
+    times.push(start + (acc / gapSum) * span);
+  });
+
+  const weights = times.map((_, i) => shapeWeight(shape, n > 1 ? i / (n - 1) : 0, phase, waves) * (0.35 + rng() * 1.3));
+  const amounts = distributeExtra(n, base, quantity, weights);
+  return times.map((t, i) => ({ index: i + 1, amount: amounts[i], minutesAt: Math.round(t) }));
+}
+
 // Views follow one of the built-in curves, the same way Manual does it: the curve is stretched over the delivery
 // window, each part gets its share of the quantity plus some randomness, and parts under the service minimum are
 // folded into their neighbour.
@@ -1143,6 +1180,7 @@ function computeAutoPlan() {
   const win = AUTO_WINDOWS[AUTO.window];
   const durationMin = Math.round(win.range[0] + autoRng("duration")() * (win.range[1] - win.range[0]));
   const pattern = pickAutoPattern(autoRng("pattern"));
+  const shapeRng = autoRng("shape-params");
 
   const blockers = [];
   let allLegs = [];
@@ -1169,10 +1207,19 @@ function computeAutoPlan() {
       blockers.push("Views: quantity is too large for one order.");
     } else {
       const headroom = 1 + autoRng("headroom-views")() * 0.8; // 1.0-1.8x the minimum -> a different number of parts each reload
-      viewsLegs = capToMax(
-        generateCurveLegs(effectiveQty, durationMin, GRAPH_PRESETS[pattern].points, autoRng("views"), viewsInfo.min, AUTO_JITTER_PCT, headroom),
-        viewsInfo.max
-      ).map((l) => ({
+      const raw = isOrganicPattern(pattern)
+        ? generateCurveLegs(effectiveQty, durationMin, GRAPH_PRESETS[pattern].points, autoRng("views"), viewsInfo.min, AUTO_JITTER_PCT, headroom)
+        : generateWindowLegs(
+            effectiveQty,
+            autoPartsFor(effectiveQty, viewsInfo.min, viewsInfo.max, headroom),
+            durationMin,
+            pattern,
+            shapeRng(),
+            2 + Math.floor(shapeRng() * 3),
+            autoRng("views"),
+            viewsInfo.min
+          );
+      viewsLegs = capToMax(raw, viewsInfo.max).map((l) => ({
         ...l,
         serviceLabel: "Views",
         category: "views",
