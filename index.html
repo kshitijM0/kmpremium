@@ -7,7 +7,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="gate.css">
   <link rel="stylesheet" href="auto-key.css">
   <link rel="stylesheet" href="neon.css">
   <meta name="theme-color" content="#02050f">
@@ -34,7 +33,6 @@
     <button class="tab-btn active" data-tab="order">📦 Order</button>
     <button class="tab-btn" data-tab="tracker">📡 Tracker</button>
     <button class="tab-btn" data-tab="schedules">📅 Schedules</button>
-    <button class="tab-btn" data-tab="logs">🧾 Logs</button>
   </nav>
 
   <main class="content">
@@ -241,45 +239,17 @@
     <section class="panel" id="tab-schedules">
       <div class="panel-head">
         <h1>Schedules</h1>
-        <p>Active orders you can pause, resume, or delete — plus who's connecting through this panel.</p>
+        <p>Orders placed from this device — pause, resume or delete them any time.</p>
       </div>
 
-      <div id="schedulesLocked" class="lock-card">
-        <div class="lock-icon">🔒</div>
-        <div class="lock-title">Protected tab</div>
-        <input id="schedulesPassword" class="input full" type="password" placeholder="Enter password">
-        <button id="unlockSchedulesBtn" class="submit-btn">Unlock</button>
-        <div id="lockError" class="lock-error"></div>
-      </div>
-
-      <div id="schedulesContent" style="display:none;">
+      <div id="schedulesContent">
         <button id="refreshActivityBtn" class="add-slot-btn" style="margin-bottom:14px;">↻ Refresh</button>
 
         <div class="section-title"><span class="card-icon">📦</span> Orders</div>
         <div id="ordersList" class="orders-list">
           <div class="summary-empty">Loading...</div>
         </div>
-
-        <div class="section-title" style="margin-top:24px;"><span class="card-icon">🔌</span> Connections &amp; orders log</div>
-        <div id="activityLogTable" class="schedule-table">
-          <div class="summary-empty">Loading...</div>
-        </div>
       </div>
-    </section>
-
-    <!-- ================= LOGS TAB ================= -->
-    <section class="panel" id="tab-logs">
-      <div class="panel-head">
-        <h1>Activity logs</h1>
-        <p>Every action taken in this session, most recent first.</p>
-      </div>
-      <div id="logsList" class="logs-list"></div>
-
-      <div class="panel-head" style="margin-top:26px;">
-        <h1 style="font-size:1.1rem;">Delivery history</h1>
-        <p>What actually got delivered, when, and to which link — saved on this device.</p>
-      </div>
-      <div id="deliveryHistoryList" class="logs-list"></div>
     </section>
 
   </main>
@@ -375,6 +345,5 @@
 </template>
 
 <script src="script.js"></script>
-  <script src="gate.js"></script>
 </body>
 </html>

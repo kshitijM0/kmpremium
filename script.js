@@ -185,10 +185,8 @@ const totalQtyEl = document.getElementById("totalQty");
 const totalCostEl = document.getElementById("totalCost");
 const balanceValueEl = document.getElementById("balanceValue");
 
-const activityLogTableEl = document.getElementById("activityLogTable");
 const ordersListEl = document.getElementById("ordersList");
 const refreshActivityBtn = document.getElementById("refreshActivityBtn");
-const logsList = document.getElementById("logsList");
 
 const tabButtons = document.querySelectorAll(".tab-btn");
 const panels = document.querySelectorAll(".panel");
@@ -213,14 +211,6 @@ const trackerLinkInput = document.getElementById("trackerLink");
 const trackBtn = document.getElementById("trackBtn");
 const trackerEmptyEl = document.getElementById("trackerEmpty");
 
-const schedulesLocked = document.getElementById("schedulesLocked");
-const schedulesContent = document.getElementById("schedulesContent");
-const schedulesPasswordInput = document.getElementById("schedulesPassword");
-const unlockSchedulesBtn = document.getElementById("unlockSchedulesBtn");
-const lockErrorEl = document.getElementById("lockError");
-
-const SCHEDULES_PASSWORD = "777";
-
 let slotCounter = 0;
 const logEntries = [];
 let editingCard = null;
@@ -234,56 +224,9 @@ tabButtons.forEach((btn) => {
     panels.forEach((p) => p.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
-    if (btn.dataset.tab === "logs") renderDeliveryHistory();
+    if (btn.dataset.tab === "schedules") loadOrders();
   });
 });
-
-async function renderDeliveryHistory() {
-  const el = document.getElementById("deliveryHistoryList");
-  el.innerHTML = `<div class="summary-empty">Loading...</div>`;
-
-  const history = loadHistory();
-  const cutoff = Date.now() - SEVEN_DAYS_MS;
-
-  const flat = [];
-  Object.keys(history).forEach((link) => {
-    history[link].forEach((entry) => {
-      if (entry.timestamp >= cutoff) flat.push({ ...entry, link });
-    });
-  });
-
-  try {
-    const res = await fetch(`${PROXY_ORIGIN}/delivered-log`);
-    if (res.ok) {
-      const serverEntries = await res.json();
-      flat.push(...serverEntries);
-    }
-  } catch {
-    // server unreachable — local history still shows below
-  }
-
-  flat.sort((a, b) => b.timestamp - a.timestamp);
-
-  if (flat.length === 0) {
-    el.innerHTML = `<div class="summary-empty">No deliveries recorded yet.</div>`;
-    return;
-  }
-
-  el.innerHTML = flat
-    .slice(0, 100)
-    .map((entry) => {
-      const time = new Date(entry.timestamp).toLocaleString([], {
-        month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-      });
-      return `
-        <div class="log-row">
-          <span class="log-time">${time}</span>
-          <span class="log-text">${entry.amount.toLocaleString()} ${capitalize(entry.category)} → ${entry.link}</span>
-        </div>
-      `;
-    })
-    .join("");
-}
 
 // ==========================================
 // LOGGING
@@ -291,22 +234,7 @@ async function renderDeliveryHistory() {
 function addLog(message) {
   const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   logEntries.unshift({ time, message });
-  renderLogs();
-}
-
-function renderLogs() {
-  if (logEntries.length === 0) {
-    logsList.innerHTML = `<div class="summary-empty">No activity yet.</div>`;
-    return;
-  }
-  logsList.innerHTML = logEntries
-    .map((entry) => `
-      <div class="log-row">
-        <span class="log-time">${entry.time}</span>
-        <span class="log-text">${entry.message}</span>
-      </div>
-    `)
-    .join("");
+  if (logEntries.length > 200) logEntries.length = 200;
 }
 
 // ==========================================
@@ -1914,7 +1842,8 @@ submitOrderBtn.addEventListener("click", async () => {
     orderStatusEl.textContent = "Sending schedule to the server...";
     orderStatusEl.className = "connect-status";
     try {
-      const res = await fetch(`${PROXY_ORIGIN}/schedule-order`, {
+      const res = await fetch("/api/auto?route=schedule-order", {
+        credentials: "same-origin",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, link, baseUrl: PANEL.baseUrl, apiKey: PANEL.apiKey, legs: allLegsForOrder }),
@@ -2084,42 +2013,31 @@ function renderTrackerSelection(catFilter) {
 }
 
 // ==========================================
-// SCHEDULES PASSWORD GATE
+// ORDERS (Schedules tab — this device's orders only: play / pause / delete)
+// The list comes from our own server, which only returns orders placed from this browser
+// and never includes any API key or panel address.
 // ==========================================
-unlockSchedulesBtn.addEventListener("click", () => {
-  if (schedulesPasswordInput.value === SCHEDULES_PASSWORD) {
-    schedulesLocked.style.display = "none";
-    schedulesContent.style.display = "block";
-    lockErrorEl.textContent = "";
-    loadOrders();
-    loadActivityLog();
-  } else {
-    lockErrorEl.textContent = "Incorrect password.";
-  }
-});
+function escapeHtml(value) {
+  return String(value == null ? "" : value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
 
-refreshActivityBtn.addEventListener("click", () => {
-  loadOrders();
-  loadActivityLog();
-});
+refreshActivityBtn.addEventListener("click", () => loadOrders());
 
-// ==========================================
-// ORDERS (Schedules tab — play / pause / delete)
-// ==========================================
 async function loadOrders() {
   ordersListEl.innerHTML = `<div class="summary-empty">Loading...</div>`;
   try {
-    const res = await fetch(`${PROXY_ORIGIN}/orders`);
-    const orders = await res.json();
-    renderOrders(orders);
+    const res = await fetch("/api/auto?route=my-orders", { credentials: "same-origin" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) throw new Error(data.error || `Server error (HTTP ${res.status})`);
+    renderOrders(data.orders);
   } catch (err) {
-    ordersListEl.innerHTML = `<div class="summary-empty">Couldn't reach the server: ${err.message}</div>`;
+    ordersListEl.innerHTML = `<div class="summary-empty">Couldn't load your orders: ${escapeHtml(err.message)}</div>`;
   }
 }
 
 function renderOrders(orders) {
   if (!orders || orders.length === 0) {
-    ordersListEl.innerHTML = `<div class="summary-empty">No orders yet — create one in the Order tab.</div>`;
+    ordersListEl.innerHTML = `<div class="summary-empty">No orders from this device yet — create one in the Order tab.</div>`;
     return;
   }
 
@@ -2127,38 +2045,41 @@ function renderOrders(orders) {
     .map((order) => {
       const pct = order.totalLegs > 0 ? Math.round((order.doneLegs / order.totalLegs) * 100) : 0;
 
-      const statsParts = Object.entries(order.byCategory).map(
-        ([cat, qty]) => `${categoryEmoji(cat)} ${capitalize(cat)} (${qty.toLocaleString()})`
+      const statsParts = Object.entries(order.byCategory || {}).map(
+        ([cat, qty]) => `${categoryEmoji(cat)} ${escapeHtml(capitalize(cat))} (${Number(qty).toLocaleString()})`
       );
 
       const nextText = order.nextFireAt
         ? new Date(order.nextFireAt).toLocaleString([], { month: "numeric", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })
         : "—";
 
-      const isCompleted = order.status === "completed";
-      const isPaused = order.status === "paused";
+      const status = ["completed", "paused", "running"].includes(order.status) ? order.status : "running";
+      const isCompleted = status === "completed";
+      const isPaused = status === "paused";
+      const id = escapeHtml(order.id);
+      const safeLink = /^https?:\/\//i.test(order.link || "") ? escapeHtml(order.link) : "#";
 
       const playPauseBtn = isCompleted
         ? ""
         : isPaused
-        ? `<button class="order-action-btn play" data-action="resume" data-id="${order.id}" title="Resume">▶</button>`
-        : `<button class="order-action-btn pause" data-action="pause" data-id="${order.id}" title="Pause">⏸</button>`;
+        ? `<button class="order-action-btn play" data-action="resume" data-id="${id}" title="Resume">▶</button>`
+        : `<button class="order-action-btn pause" data-action="pause" data-id="${id}" title="Pause">⏸</button>`;
 
       return `
         <div class="order-card">
           <div class="order-card-main">
             <div class="order-card-head">
-              <span class="order-name">${order.name}</span>
-              <span class="order-status-badge ${order.status}">${capitalize(order.status)}</span>
+              <span class="order-name">${escapeHtml(order.name)}</span>
+              <span class="order-status-badge ${status}">${capitalize(status)}</span>
             </div>
             <div class="order-stats-line">${statsParts.join(" · ")}</div>
-            <div class="order-progress-line">Done: ${order.doneLegs}/${order.totalLegs} legs · Next: ${nextText}</div>
-            <a class="order-link" href="${order.link}" target="_blank" rel="noopener">${order.link}</a>
+            <div class="order-progress-line">Done: ${Number(order.doneLegs) || 0}/${Number(order.totalLegs) || 0} legs · Next: ${nextText}</div>
+            <a class="order-link" href="${safeLink}" target="_blank" rel="noopener noreferrer">${escapeHtml(order.link)}</a>
             <div class="order-progress-bar"><div class="order-progress-fill" style="width:${pct}%"></div></div>
           </div>
           <div class="order-actions">
             ${playPauseBtn}
-            <button class="order-action-btn delete" data-action="delete" data-id="${order.id}" title="Delete">🗑</button>
+            <button class="order-action-btn delete" data-action="delete" data-id="${id}" title="Delete">🗑</button>
           </div>
         </div>
       `;
@@ -2167,15 +2088,21 @@ function renderOrders(orders) {
 
   ordersListEl.querySelectorAll(".order-action-btn").forEach((btn) => {
     btn.addEventListener("click", async () => {
-      const action = btn.dataset.action;
-      const id = btn.dataset.id;
-
-      if (action === "delete") {
-        await fetch(`${PROXY_ORIGIN}/orders/${id}`, { method: "DELETE" });
-        addLog(`Deleted order ${id}`);
-      } else {
-        await fetch(`${PROXY_ORIGIN}/orders/${id}/${action}`, { method: "POST" });
-        addLog(`${capitalize(action)}d order ${id}`);
+      const { action, id } = btn.dataset;
+      btn.disabled = true;
+      try {
+        const res = await fetch("/api/auto?route=my-order-action", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, action }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.error || `Server error (HTTP ${res.status})`);
+        addLog(`${{ pause: "Paused", resume: "Resumed", delete: "Deleted" }[action] || action} order ${id}`);
+      } catch (err) {
+        ordersListEl.innerHTML = `<div class="summary-empty">Couldn't ${escapeHtml(action)} the order: ${escapeHtml(err.message)}</div>`;
+        return;
       }
       loadOrders();
     });
@@ -2183,60 +2110,9 @@ function renderOrders(orders) {
 }
 
 function categoryEmoji(cat) {
-  const map = { views: "👁", likes: "❤️", followers: "👥", repost: "🔄", comments: "💬" };
+  const map = { views: "👁", likes: "❤️", followers: "👥", repost: "🔄", comments: "💬", share: "📤", save: "🔖" };
   return map[cat] || "•";
 }
-
-async function loadActivityLog() {
-  activityLogTableEl.innerHTML = `<div class="summary-empty">Loading...</div>`;
-  try {
-    const res = await fetch(`${PROXY_ORIGIN}/activity-log`);
-    const entries = await res.json();
-    renderActivityLog(entries);
-  } catch (err) {
-    activityLogTableEl.innerHTML = `<div class="summary-empty">Couldn't reach the server: ${err.message}</div>`;
-  }
-}
-
-function renderActivityLog(entries) {
-  if (!entries || entries.length === 0) {
-    activityLogTableEl.innerHTML = `<div class="summary-empty">No activity recorded yet.</div>`;
-    return;
-  }
-
-  const headRow = `
-    <div class="schedule-row head-row">
-      <span>Time</span><span>Website</span><span>API Key</span><span>Detail</span>
-    </div>
-  `;
-
-  const rows = entries
-    .map((e) => {
-      const time = new Date(e.timestamp).toLocaleString([], {
-        month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-      });
-      const detail =
-        e.type === "connect"
-          ? "Connected"
-          : `${e.totalQuantity ? e.totalQuantity.toLocaleString() : "?"} units (${e.legCount} legs) → ${e.link || "?"}`;
-
-      return `
-        <div class="schedule-row">
-          <span class="sched-time">${time}</span>
-          <span>${e.baseUrl || "—"}</span>
-          <span class="mono">${e.apiKey || "—"}</span>
-          <span class="sched-status">${detail}</span>
-        </div>
-      `;
-    })
-    .join("");
-
-  activityLogTableEl.innerHTML = headRow + rows;
-}
-
-schedulesPasswordInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") unlockSchedulesBtn.click();
-});
 
 // ==========================================
 // MISC

@@ -48,6 +48,16 @@
   .badge.active { background: #052e1c; color: #34d399; }
   .badge.exhausted { background: #2e2205; color: #fbbf24; }
   .badge.revoked { background: #2e0505; color: #f87171; }
+  .atabs { display: flex; gap: 8px; margin: 4px 0 18px; border-bottom: 1px solid #262626; }
+  .atab { background: transparent; color: #999; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 10px 14px; font-size: 0.88rem; font-weight: 600; cursor: pointer; }
+  .atab.active { color: #f2f2f2; border-bottom-color: #6cb4ff; }
+  .st { padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; }
+  .st.running { background: #052e1c; color: #34d399; }
+  .st.paused { background: #2e2405; color: #fbbf24; }
+  .st.completed { background: #1c2430; color: #8fb4ff; }
+  .bar { width: 90px; height: 5px; background: #262626; border-radius: 4px; overflow: hidden; margin-top: 4px; }
+  .bar i { display: block; height: 100%; background: #6cb4ff; }
+  .wrap { white-space: normal; word-break: break-all; max-width: 240px; }
   .meter { width: 90px; height: 5px; background: #262626; border-radius: 4px; overflow: hidden; margin-top: 4px; }
   .meter i { display: block; height: 100%; background: #34d399; }
 </style>
@@ -65,6 +75,13 @@
 <div id="mainPanel" class="panel" style="display:none;">
   <div class="brand">The KM <span>Auto Admin</span></div>
   <h1>Auto Order — Keys &amp; Providers</h1>
+
+  <div class="atabs">
+    <button class="atab active" data-atab="main">Keys &amp; Providers</button>
+    <button class="atab" data-atab="schedules">Schedules</button>
+  </div>
+
+  <div id="aTabMain">
 
   <div class="card">
     <h2 style="margin-top:0;">Customer Keys (balance in USD)</h2>
@@ -133,6 +150,36 @@
         </thead>
         <tbody id="mappingBody"></tbody>
       </table>
+    </div>
+  </div>
+  </div><!-- /aTabMain -->
+
+  <div id="aTabSchedules" style="display:none;">
+    <div class="card">
+      <h2 style="margin-top:0;">All orders</h2>
+      <p class="hint">Every order from every device, with the panel and API each one uses. Pause, resume or delete any of them. Updates itself every 30 seconds while this tab is open.</p>
+      <div class="row">
+        <button class="ghost" id="reloadSchedulesBtn">↻ Refresh</button>
+        <span id="schedulesSummary" class="hint" style="margin:0;"></span>
+        <span id="schedulesMsg" class="error" style="display:none;"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Order</th><th>Device</th><th>Link</th><th>Status</th><th>Progress</th><th>Next</th><th>Panel</th><th>API key</th><th>Actions</th></tr></thead>
+          <tbody id="schedulesBody"><tr><td colspan="9" class="empty">Open this tab to load.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;">Connections &amp; orders log</h2>
+      <p class="hint">Who connected which panel, and the orders placed, with the API key used.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Website</th><th>API key</th><th>Detail</th></tr></thead>
+          <tbody id="activityBody"><tr><td colspan="4" class="empty">Open this tab to load.</td></tr></tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>
@@ -669,6 +716,92 @@ async function searchServices() {
     });
 
     await loadMapping();
+  });
+
+  // ---------------- Admin tabs + Schedules ----------------
+  let schedulesTimer = null;
+
+  document.querySelectorAll('.atab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.atab').forEach((b) => b.classList.toggle('active', b === btn));
+      const schedules = btn.dataset.atab === 'schedules';
+      document.getElementById('aTabMain').style.display = schedules ? 'none' : 'block';
+      document.getElementById('aTabSchedules').style.display = schedules ? 'block' : 'none';
+      clearInterval(schedulesTimer);
+      if (schedules) {
+        loadAdminSchedules();
+        schedulesTimer = setInterval(loadAdminSchedules, 30000);
+      }
+    });
+  });
+
+  function schedulesMessage(text) {
+    const el = document.getElementById('schedulesMsg');
+    el.textContent = text || '';
+    el.style.display = text ? 'inline' : 'none';
+  }
+
+  async function loadAdminSchedules() {
+    const res = await fetch('/api/auto?route=admin-orders', { credentials: 'include' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) { schedulesMessage(data.error || 'Could not load the orders (HTTP ' + res.status + ').'); return; }
+    schedulesMessage('');
+    renderAdminSchedules(data);
+  }
+
+  function renderAdminSchedules(data) {
+    const orders = data.orders || [];
+    document.getElementById('schedulesSummary').textContent = orders.length
+      ? orders.length + ' orders from ' + data.devices + ' device' + (data.devices === 1 ? '' : 's') + ' · ' + orders.filter((o) => o.status === 'running').length + ' running'
+      : '';
+
+    const body = document.getElementById('schedulesBody');
+    body.innerHTML = orders.length ? orders.map((o) => {
+      const pct = o.totalLegs > 0 ? Math.round((o.doneLegs / o.totalLegs) * 100) : 0;
+      const next = o.nextFireAt ? new Date(o.nextFireAt).toLocaleString() : '—';
+      const status = ['running', 'paused', 'completed'].includes(o.status) ? o.status : 'running';
+      const link = /^https?:\/\//i.test(o.link) ? escHtml(o.link) : '';
+      const toggle = status === 'completed' ? '' : status === 'paused'
+        ? `<button class="secondary" data-sa="resume" data-id="${escHtml(o.id)}">▶ Resume</button>`
+        : `<button class="ghost" data-sa="pause" data-id="${escHtml(o.id)}">⏸ Pause</button>`;
+      return `<tr>
+        <td>${escHtml(o.name)}</td>
+        <td class="mono">${escHtml(o.device)}</td>
+        <td class="wrap">${link ? ('<a ' + 'hr' + 'ef="' + link + '" target="_blank" rel="noopener noreferrer" style="color:#8fb4ff;">' + link + '</a>') : '—'}</td>
+        <td><span class="st ${status}">${status}</span></td>
+        <td>${Number(o.doneLegs) || 0}/${Number(o.totalLegs) || 0} legs<div class="bar"><i style="width:${pct}%"></i></div></td>
+        <td>${escHtml(next)}</td>
+        <td class="wrap">${escHtml(o.baseUrl || '—')}</td>
+        <td class="mono wrap">${escHtml(o.apiKey || '—')}</td>
+        <td>${toggle} <button class="danger" data-sa="delete" data-id="${escHtml(o.id)}">Delete</button></td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="9" class="empty">No orders yet.</td></tr>';
+
+    const act = document.getElementById('activityBody');
+    const entries = data.activity;
+    if (entries === null || entries === undefined) { act.innerHTML = '<tr><td colspan="4" class="empty">The scheduler did not return its activity log.</td></tr>'; return; }
+    act.innerHTML = entries.length ? entries.map((e) => {
+      const time = new Date(e.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const detail = e.type === 'connect' ? 'Connected' : (e.totalQuantity ? Number(e.totalQuantity).toLocaleString() : '?') + ' units (' + (e.legCount || '?') + ' legs) → ' + (e.link || '?');
+      return `<tr><td>${escHtml(time)}</td><td class="wrap">${escHtml(e.baseUrl || '—')}</td><td class="mono wrap">${escHtml(e.apiKey || '—')}</td><td class="wrap">${escHtml(detail)}</td></tr>`;
+    }).join('') : '<tr><td colspan="4" class="empty">No activity recorded yet.</td></tr>';
+  }
+
+  document.getElementById('reloadSchedulesBtn').addEventListener('click', loadAdminSchedules);
+
+  document.getElementById('schedulesBody').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-sa]');
+    if (!b) return;
+    if (b.dataset.sa === 'delete' && !confirm('Delete this order? Parts that have not run yet will be cancelled.')) return;
+    b.disabled = true;
+    const res = await fetch('/api/auto?route=admin-order-action', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: b.dataset.id, action: b.dataset.sa })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.success) schedulesMessage(d.error || 'That did not work (HTTP ' + res.status + ').');
+    await loadAdminSchedules();
   });
 
   boot();

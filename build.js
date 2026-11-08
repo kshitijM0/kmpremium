@@ -92,6 +92,18 @@ for (const dir of STATIC_DIRS) {
   }
 }
 
+// ---------- 3b. cache-busting ----------
+// Stamp every local .css/.js reference in the built HTML with this build's id (script.js?v=abc123), so a visitor's
+// browser can never keep showing an old script.js or style.css after a new deploy.
+const BUILD_ID = Date.now().toString(36);
+for (const htmlName of fs.readdirSync(OUT).filter((n) => n.toLowerCase().endsWith(".html"))) {
+  const htmlPath = path.join(OUT, htmlName);
+  const stamped = fs
+    .readFileSync(htmlPath, "utf8")
+    .replace(/\b(src|href)=(["'])((?!https?:|\/\/|data:|#)[^"'?#]+\.(?:css|js))\2/gi, (m, attr, q, ref) => `${attr}=${q}${ref}?v=${BUILD_ID}${q}`);
+  fs.writeFileSync(htmlPath, stamped);
+}
+
 if (!fs.existsSync(path.join(OUT, "index.html"))) {
   console.error("BUILD FAILED: index.html was not found in the project root.");
   process.exit(1);

@@ -32,3 +32,34 @@ CUSTOM COMMENTS (important)
    "[comments] worker error ... did you run supabase/auto-comment-jobs.sql?" the SQL step was skipped.
  - A comment part that fails after 3 tries is refunded to the customer's key automatically.
    Look at Supabase -> Table Editor -> auto_comment_jobs (status, error, provider_order_id) to follow each part.
+
+IF THE SITE STILL LOOKS OLD AFTER A DEPLOY
+ - Render dashboard -> your service -> Events. If the latest deploy says "Failed", open its log. A line
+   "BUILD FAILED: ... file not found" means index.html points to a file that is not in the repo
+   (for example gate.css / gate.js — they do not exist, so index.html must not mention them).
+   While a build fails, Render keeps serving the last good version, which looks like "nothing changed".
+ - The new build.js stamps script.js/style.css with a version (script.js?v=...) and server.js sends
+   Cache-Control: no-cache, so browsers pick up each deploy. Still, try Ctrl+Shift+R once.
+
+SCHEDULES, DEVICES AND PRIVACY
+ - The website now has 4 tabs: API, Order, Tracker, Schedules. The Logs tab and the Schedules password are gone.
+ - Schedules shows ONLY orders placed from this browser/device (a random id kept in an HttpOnly cookie, "km_device").
+   It never shows any API key or panel address, and the person can pause, resume or delete only their own orders.
+   Clearing the browser's cookies, or using another browser, starts a fresh empty list (the orders keep running).
+ - Orders now carry a small tag at the end of their name ("... ⟦d:1a2b3c4d5e⟧") so the server knows which device owns
+   them. It is a one-way hash, so nobody can work out another device's id from it. The tag is hidden everywhere on the site.
+ - Manual-mode orders are now sent through YOUR server (/api/auto?route=schedule-order) instead of straight to the
+   scheduler, so they can be tied to the device. The panel details the customer typed are only forwarded.
+ - Orders created before this update have no tag: devices won't see them, the admin still does.
+ - /auto-admin has a new tab "Schedules": every order from every device (which device, link, status, progress,
+   panel and API key used), the connections & orders log, and pause / resume / delete for any of them.
+
+CLOSING THE LEAK AT THE SOURCE (do this, otherwise the data is still public)
+ The scheduler (kmpanel.onrender.com) answers /orders and /activity-log to anybody who knows the address, and the
+ activity log contains people's API keys. Hiding it in the website is not enough.
+   1) Open scheduler-patch/km-secret-guard.js and paste it into the scheduler's code (instructions are inside).
+   2) Pick a long random text. Add  KM_SCHEDULER_SECRET = <that text>  to BOTH Render services (scheduler and website).
+   3) Redeploy both. Test: open https://kmpanel.onrender.com/orders in a browser -> it must say Unauthorized,
+      while the website's Schedules tab and /auto-admin keep working.
+ Nothing breaks if you only set it on the website first. The guard does nothing until it is set on the scheduler too.
+ Still open on the scheduler after this: /proxy (a general relay for panel calls), /schedule-order and /history.

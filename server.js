@@ -138,6 +138,8 @@ app.use(
     setHeaders(res, filePath) {
       if (filePath.endsWith(".css")) res.type("text/css");
       if (filePath.endsWith(".js")) res.type("application/javascript");
+      // always re-check pages and code with the server, so a new deploy shows up on the next visit
+      if (/\.(?:html|css|js)$/i.test(filePath)) res.setHeader("Cache-Control", "no-cache");
     }
   })
 );
