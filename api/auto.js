@@ -2,9 +2,12 @@
 //   /api/auto?route=providers | mapping | services      Auto Order admin (providers, service mapping)
 //   /api/auto?route=keys                                 admin: prepaid USD keys
 //   /api/auto?route=key-catalog | key-order              customer: balance, rates, place an order with a key
+//   /api/auto?route=my-orders | my-order-action | schedule-order   customer: only this device's orders
+//   /api/auto?route=admin-orders | admin-order-action    admin: every order + API details
 //   /api/admin/auth      -> route=auth                   admin login/logout       [see vercel.json]
 //   /api/panel-config    -> route=panel-config           per-panel services       [see vercel.json]
 const { catalogRoute, orderRoute } = require("../lib/auto/keyOrder");
+const schedules = require("../lib/auto/orders");
 
 const routes = {
   providers: require("../lib/auto/providers"),
@@ -15,6 +18,11 @@ const routes = {
   keys: require("../lib/auto/keys"),
   "key-catalog": catalogRoute,
   "key-order": orderRoute,
+  "my-orders": schedules.myOrders,
+  "my-order-action": schedules.myOrderAction,
+  "schedule-order": schedules.scheduleOrder,
+  "admin-orders": schedules.adminOrders,
+  "admin-order-action": schedules.adminOrderAction,
 };
 
 module.exports = async (req, res) => {
