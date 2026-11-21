@@ -1,7 +1,7 @@
 // ==========================================
 // HARDCODED PROXY — no user-facing field needed
 // ==========================================
-const PROXY_URL = "https://kmpanel.onrender.com/proxy";
+const PROXY_URL = "https://kmpanel-proxy.vercel.app/";
 const PROXY_ORIGIN = PROXY_URL.replace(/\/proxy$/, "");
 
 // ==========================================
