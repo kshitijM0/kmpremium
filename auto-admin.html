@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The KM — Auto Admin</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: #0a0a0a; color: #f2f2f2; font-family: -apple-system, Segoe UI, Roboto, sans-serif; padding: 24px; }
+  .center-box { max-width: 420px; margin: 80px auto; background: #151515; border: 1px solid #262626; border-radius: 14px; padding: 24px; }
+  h1 { font-size: 1.2rem; margin: 0 0 16px; }
+  h2 { font-size: 1rem; margin: 28px 0 12px; color: #ddd; }
+  input, select { background: #1e1e1e; border: 1px solid #333; color: #f2f2f2; border-radius: 8px; padding: 8px 10px; font-size: 0.85rem; }
+  input.wide, select.wide { width: 100%; margin-bottom: 8px; }
+  button { background: #f2f2f2; color: #0a0a0a; border: none; border-radius: 8px; padding: 8px 14px; font-weight: 600; font-size: 0.82rem; cursor: pointer; }
+  button.secondary { background: transparent; color: #34d399; border: 1px solid #34d399; }
+  button.danger { background: transparent; color: #f87171; border: 1px solid #f87171; }
+  button.ghost { background: transparent; color: #999; border: 1px solid #444; padding: 4px 8px; }
+  button:disabled { opacity: 0.4; cursor: default; }
+  .error { color: #f87171; font-size: 0.82rem; }
+  .panel { max-width: 1100px; margin: 0 auto; }
+  .card { background: #151515; border: 1px solid #262626; border-radius: 14px; padding: 18px; margin-bottom: 20px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+  th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid #262626; white-space: nowrap; }
+  th { color: #999; font-weight: 500; }
+  .mono { font-family: monospace; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .badge { padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; }
+  .badge.online { background: #052e1c; color: #34d399; }
+  .badge.offline, .badge.invalid_key { background: #2e0505; color: #f87171; }
+  .badge.unknown, .badge.rate_limited { background: #2e2405; color: #fbbf24; }
+  .badge.active { background: #052e1c; color: #34d399; }
+  .badge.disabled { background: #262626; color: #999; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tabs button { background: #1e1e1e; color: #ccc; border: 1px solid #333; }
+  .tabs button.active { background: #f2f2f2; color: #0a0a0a; }
+  .empty { text-align: center; color: #777; padding: 16px; }
+  .table-wrap { overflow-x: auto; }
+  .service-select-wrap { min-width: 260px; flex: 1; }
+  .service-search { width: 100%; margin-bottom: 8px; }
+  .brand { font-weight: 800; font-size: 1.05rem; letter-spacing: 0.02em; margin-bottom: 14px;
+           background: linear-gradient(135deg, #6cb4ff, #a396ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .brand span { color: #777; -webkit-text-fill-color: #777; font-weight: 500; font-size: 0.8rem; margin-left: 6px; }
+  .hint { color: #8a8a8a; font-size: 0.8rem; line-height: 1.5; margin: 0 0 12px; }
+  .newkey { background: #0d1f17; border: 1px solid #1f6f4a; border-radius: 10px; padding: 12px; margin-bottom: 12px; }
+  .newkey .k { font-family: monospace; font-size: 1.05rem; letter-spacing: 0.05em; color: #34d399; }
+  .newkey .line { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 4px 0; }
+  .badge.active { background: #052e1c; color: #34d399; }
+  .badge.exhausted { background: #2e2205; color: #fbbf24; }
+  .badge.revoked { background: #2e0505; color: #f87171; }
+  .atabs { display: flex; gap: 8px; margin: 4px 0 18px; border-bottom: 1px solid #262626; }
+  .atab { background: transparent; color: #999; border: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 10px 14px; font-size: 0.88rem; font-weight: 600; cursor: pointer; }
+  .atab.active { color: #f2f2f2; border-bottom-color: #6cb4ff; }
+  .st { padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; }
+  .st.running { background: #052e1c; color: #34d399; }
+  .st.paused { background: #2e2405; color: #fbbf24; }
+  .st.completed { background: #1c2430; color: #8fb4ff; }
+  .bar { width: 90px; height: 5px; background: #262626; border-radius: 4px; overflow: hidden; margin-top: 4px; }
+  .bar i { display: block; height: 100%; background: #6cb4ff; }
+  .wrap { white-space: normal; word-break: break-all; max-width: 240px; }
+  .meter { width: 90px; height: 5px; background: #262626; border-radius: 4px; overflow: hidden; margin-top: 4px; }
+  .meter i { display: block; height: 100%; background: #34d399; }
+</style>
+</head>
+<body>
+
+<div id="loginBox" class="center-box">
+  <div class="brand">The KM <span>Auto Admin</span></div>
+  <h1>Admin login</h1>
+  <input id="passwordInput" class="wide" type="password" placeholder="Password">
+  <div id="loginError" class="error" style="display:none; margin-bottom:8px;"></div>
+  <button id="loginBtn" style="width:100%;">Log in</button>
+</div>
+
+<div id="mainPanel" class="panel" style="display:none;">
+  <div class="brand">The KM <span>Auto Admin</span></div>
+  <h1>Auto Order — Keys &amp; Providers</h1>
+
+  <div class="atabs">
+    <button class="atab active" data-atab="main">Keys &amp; Providers</button>
+    <button class="atab" data-atab="schedules">Schedules</button>
+  </div>
+
+  <div id="aTabMain">
+
+  <div class="card">
+    <h2 style="margin-top:0;">Customer Keys (balance in USD)</h2>
+    <p class="hint">Make a key with a fixed balance (for example $1, $2, $5). The customer pastes it in the site's Auto tab. Every order is charged from that key at the customer rates you set in <b>Service Mapping</b> below, and the key switches itself off when its balance is used up. When they want more, take payment and make a new key (or top the same key up).</p>
+    <div class="row">
+      <input id="newKeyAmount" type="number" min="0.01" step="0.01" placeholder="Amount in $ (e.g. 2)" style="width:170px;">
+      <input id="newKeyNote" placeholder="Note (customer name)" style="min-width:200px;" maxlength="100">
+      <input id="newKeyCount" type="number" min="1" max="20" value="1" style="width:70px;" title="How many keys to make">
+      <button id="createKeyBtn" class="secondary">Create key</button>
+      <span id="keysMsg" class="error" style="display:none;"></span>
+    </div>
+    <div id="newKeyResult" class="newkey" style="display:none;"></div>
+    <div class="row">
+      <span id="keysSummary" class="hint" style="margin:0;"></span>
+      <button class="ghost" id="reloadKeysBtn">Refresh</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Key</th><th>Balance</th><th>Status</th><th>Note</th><th>Last used</th><th>Actions</th></tr></thead>
+        <tbody id="keysBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Master Providers</h2>
+    <div class="row">
+      <input id="newProviderName" placeholder="Provider name">
+      <input id="newProviderUrl" placeholder="API URL (https://...)" style="min-width:220px;">
+      <input id="newProviderKey" placeholder="API key" type="password">
+      <button id="addProviderBtn" class="secondary">Add Provider</button>
+    </div>
+    <div id="providerFormError" class="error" style="display:none;"></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Name</th><th>URL</th><th>Status</th><th>Last Test</th><th>Balance</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="providersBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Service Mapping (Auto Order pools)</h2>
+    <div class="tabs" id="typeTabs"></div>
+
+    <div class="row">
+      <select id="mapProviderSelect" style="min-width:160px;"></select>
+
+      <div class="service-select-wrap">
+        <input id="serviceSearch" class="service-search" type="text" placeholder="Search service ID or name...">
+        <select id="mapServiceSelect" style="width:100%;"></select>
+      </div>
+
+      <input id="mapCustomerRate" placeholder="Customer rate / 1000" style="width:150px;">
+      <button id="addMappingBtn" class="secondary">Add to pool</button>
+    </div>
+
+    <div id="mappingFormError" class="error" style="display:none;"></div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>#</th><th>Provider</th><th>Service ID</th><th>Customer Rate</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="mappingBody"></tbody>
+      </table>
+    </div>
+  </div>
+  </div><!-- /aTabMain -->
+
+  <div id="aTabSchedules" style="display:none;">
+    <div class="card">
+      <h2 style="margin-top:0;">All orders</h2>
+      <p class="hint">Every order from every device, with the panel and API each one uses. Pause, resume or delete any of them. Updates itself every 30 seconds while this tab is open.</p>
+      <div class="row">
+        <button class="ghost" id="reloadSchedulesBtn">↻ Refresh</button>
+        <span id="schedulesSummary" class="hint" style="margin:0;"></span>
+        <span id="schedulesMsg" class="error" style="display:none;"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Order</th><th>Device</th><th>Link</th><th>Status</th><th>Progress</th><th>Next</th><th>Panel</th><th>API key</th><th>Actions</th></tr></thead>
+          <tbody id="schedulesBody"><tr><td colspan="9" class="empty">Open this tab to load.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;">Connections &amp; orders log</h2>
+      <p class="hint">Who connected which panel, and the orders placed, with the API key used.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>Website</th><th>API key</th><th>Detail</th></tr></thead>
+          <tbody id="activityBody"><tr><td colspan="4" class="empty">Open this tab to load.</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const loginBox = document.getElementById('loginBox');
+  const mainPanel = document.getElementById('mainPanel');
+  const SERVICE_TYPES = ['views','likes','shares','saves','reposts','comments'];
+  let currentType = 'views';
+  let providersCache = [];
+  let servicesCache = [];
+
+  function showLoginError(msg) {
+    const el = document.getElementById('loginError');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  // Returns true once the panel is open. Anything that goes wrong is shown on the login box.
+  async function boot(justLoggedIn) {
+    let res;
+    try { res = await fetch('/api/auto?route=providers', { credentials: 'include' }); }
+    catch (e) { showLoginError('Network error: ' + e.message); return false; }
+    if (res.status === 401) {
+      if (justLoggedIn) showLoginError('Password accepted, but the session cookie was not kept. Set ADMIN_SESSION_SECRET in Vercel, redeploy, and try again.');
+      return false;
+    }
+    if (res.status === 404) { showLoginError('/api/auto was not found — deploy api/auto.js first.'); return false; }
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      showLoginError('Server error (' + res.status + '): ' + (d.error || 'check the Vercel function logs.'));
+      return false;
+    }
+    loginBox.style.display = 'none';
+    mainPanel.style.display = 'block';
+    await loadKeys();
+    await loadProviders();
+    renderTypeTabs();
+    await loadMapping();
+    return true;
+  }
+
+  document.getElementById('loginBtn').addEventListener('click', async () => {
+    document.getElementById('loginError').style.display = 'none';
+    const password = document.getElementById('passwordInput').value;
+    let res;
+    try {
+      res = await fetch('/api/admin/auth', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'login', password })
+      });
+    } catch (e) { showLoginError('Network error: ' + e.message); return; }
+    if (res.ok) { await boot(true); return; }
+    const data = await res.json().catch(() => ({}));
+    const hints = {
+      401: ' Check the password (it is the ADMIN_PASSWORD value in Vercel).',
+      404: ' /api/admin/auth is missing — deploy api/auto.js and vercel.json.',
+      429: ' Too many tries — wait about 10 minutes.',
+      500: ' ADMIN_PASSWORD or ADMIN_SESSION_SECRET is not set in Vercel.'
+    };
+    showLoginError((data.error || 'Login failed.') + ' [HTTP ' + res.status + ']' + (hints[res.status] || ''));
+  });
+  document.getElementById('passwordInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('loginBtn').click(); });
+
+  // ---------------- Customer keys ----------------
+  const fmtUsd = (n) => { const v = Number(n) || 0; return v >= 1 ? '$' + v.toFixed(2) : '$' + v.toFixed(3); };
+  const escHtml = (t) => String(t == null ? '' : t).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let keysCache = [];
+
+  function keysMessage(text) {
+    const el = document.getElementById('keysMsg');
+    el.textContent = text || '';
+    el.style.display = text ? 'inline' : 'none';
+  }
+
+  async function keysApi(body) {
+    const res = await fetch('/api/auto?route=keys', {
+      method: 'POST', credentials: 'include',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok && data.success !== false, data };
+  }
+
+  async function loadKeys() {
+    const res = await fetch('/api/auto?route=keys', { credentials: 'include' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { keysMessage(data.error || 'Could not load keys.'); return; }
+    keysCache = data.keys || [];
+    renderKeys();
+  }
+
+  function renderKeys() {
+    const body = document.getElementById('keysBody');
+    const active = keysCache.filter((k) => k.status === 'active');
+    const held = active.reduce((a, k) => a + Number(k.remaining_usd), 0);
+    document.getElementById('keysSummary').textContent = keysCache.length
+      ? keysCache.length + ' keys · ' + active.length + ' active · ' + fmtUsd(held) + ' of customer balance still unspent'
+      : '';
+    if (!keysCache.length) { body.innerHTML = '<tr><td colspan="6" class="empty">No keys yet. Make the first one above.</td></tr>'; return; }
+    body.innerHTML = keysCache.map((k) => {
+      const pct = Math.max(0, Math.min(100, (Number(k.remaining_usd) / Number(k.initial_usd || 1)) * 100));
+      const live = k.status === 'active';
+      return `<tr>
+        <td class="mono">${escHtml(k.key_value)}</td>
+        <td>${fmtUsd(k.remaining_usd)} <span style="color:#777;">of ${fmtUsd(k.initial_usd)}</span><div class="meter"><i style="width:${pct}%"></i></div></td>
+        <td><span class="badge ${escHtml(k.status)}">${escHtml(k.status)}</span></td>
+        <td>${escHtml(k.note || '')}</td>
+        <td>${k.last_used_at ? new Date(k.last_used_at).toLocaleString() : '—'}</td>
+        <td>
+          <button class="ghost" data-k="copy" data-id="${escHtml(k.id)}">Copy</button>
+          <button class="secondary" data-k="topup" data-id="${escHtml(k.id)}" ${k.status === 'revoked' ? 'disabled' : ''}>Top up</button>
+          <button class="danger" data-k="revoke" data-id="${escHtml(k.id)}" ${live || k.status === 'exhausted' ? '' : 'disabled'}>Deactivate</button>
+          <button class="ghost" data-k="delete" data-id="${escHtml(k.id)}">Delete</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  document.getElementById('createKeyBtn').addEventListener('click', async () => {
+    keysMessage('');
+    const amount = Number(document.getElementById('newKeyAmount').value);
+    if (!(amount > 0)) { keysMessage('Enter an amount in dollars, for example 2.'); return; }
+    const btn = document.getElementById('createKeyBtn'); btn.disabled = true;
+    const r = await keysApi({
+      action: 'create', amount,
+      note: document.getElementById('newKeyNote').value.trim(),
+      count: Number(document.getElementById('newKeyCount').value) || 1
+    });
+    btn.disabled = false;
+    if (!r.ok) { keysMessage(r.data.error || 'Could not create the key.'); return; }
+    const box = document.getElementById('newKeyResult');
+    box.style.display = 'block';
+    box.innerHTML = '<div style="color:#999;font-size:0.78rem;margin-bottom:4px;">New key' + (r.data.keys.length > 1 ? 's' : '') + ' — send ' + (r.data.keys.length > 1 ? 'each to a customer' : 'this to the customer') + ':</div>' +
+      r.data.keys.map((k) => `<div class="line"><span class="k">${escHtml(k.key_value)}</span><span>${fmtUsd(k.initial_usd)}</span><button class="ghost" data-copy="${escHtml(k.key_value)}">Copy</button></div>`).join('');
+    document.getElementById('newKeyAmount').value = '';
+    document.getElementById('newKeyNote').value = '';
+    await loadKeys();
+  });
+
+  document.getElementById('newKeyResult').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-copy]');
+    if (b) { navigator.clipboard.writeText(b.dataset.copy); b.textContent = 'Copied'; }
+  });
+
+  document.getElementById('reloadKeysBtn').addEventListener('click', loadKeys);
+
+  document.getElementById('keysBody').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-k]');
+    if (!b) return;
+    const key = keysCache.find((k) => k.id === b.dataset.id);
+    if (!key) return;
+    keysMessage('');
+    if (b.dataset.k === 'copy') { navigator.clipboard.writeText(key.key_value); b.textContent = 'Copied'; return; }
+    if (b.dataset.k === 'topup') {
+      const v = prompt('Add how many dollars to ' + key.key_value + '?', '1');
+      if (v === null) return;
+      const r = await keysApi({ action: 'topup', id: key.id, amount: Number(v) });
+      if (!r.ok) keysMessage(r.data.error || 'Top-up failed.');
+    } else if (b.dataset.k === 'revoke') {
+      if (!confirm('Deactivate ' + key.key_value + '? The customer will not be able to order with it any more.')) return;
+      const r = await keysApi({ action: 'revoke', id: key.id });
+      if (!r.ok) keysMessage(r.data.error || 'Could not deactivate.');
+    } else if (b.dataset.k === 'delete') {
+      if (!confirm('Delete ' + key.key_value + ' and its history for good?')) return;
+      const r = await keysApi({ action: 'delete', id: key.id });
+      if (!r.ok) keysMessage(r.data.error || 'Could not delete.');
+    }
+    await loadKeys();
+  });
+
+  async function loadProviders() {
+    const res = await fetch('/api/auto?route=providers', { credentials: 'include' });
+    const data = await res.json();
+    providersCache = data.providers || [];
+    renderProviders();
+    renderMapProviderSelect();
+  }
+
+  function renderProviders() {
+    const body = document.getElementById('providersBody');
+    if (!providersCache.length) {
+      body.innerHTML = '<tr><td colspan="6" class="empty">No providers yet.</td></tr>';
+      return;
+    }
+    body.innerHTML = providersCache.map(p => `
+      <tr>
+        <td>${p.provider_name}</td>
+        <td class="mono">${p.api_url}</td>
+        <td><span class="badge ${p.status}">${p.status}</span></td>
+        <td>${p.last_test_status ? `<span class="badge ${p.last_test_status}">${p.last_test_status}</span>` : '—'}</td>
+        <td>${p.last_test_balance ?? '—'} ${p.last_test_currency ?? ''}</td>
+        <td>
+          <button class="ghost" data-action="test" data-id="${p.id}">Test</button>
+          <button class="ghost" data-action="fetch-services" data-id="${p.id}">Fetch Services</button>
+          <button class="ghost" data-action="toggle" data-id="${p.id}" data-status="${p.status}">${p.status === 'active' ? 'Disable' : 'Enable'}</button>
+          <button class="ghost" data-action="duplicate" data-id="${p.id}">Duplicate</button>
+          <button class="ghost danger" data-action="delete" data-id="${p.id}">Delete</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  document.getElementById('addProviderBtn').addEventListener('click', async () => {
+    const providerName = document.getElementById('newProviderName').value.trim();
+    const apiUrl = document.getElementById('newProviderUrl').value.trim();
+    const apiKey = document.getElementById('newProviderKey').value.trim();
+    const errEl = document.getElementById('providerFormError');
+    errEl.style.display = 'none';
+
+    const res = await fetch('/api/auto?route=providers', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ action: 'create', providerName, apiUrl, apiKey })
+    });
+    const data = await res.json();
+    if (!data.success) {
+      errEl.textContent = data.error;
+      errEl.style.display = 'block';
+      return;
+    }
+    document.getElementById('newProviderName').value = '';
+    document.getElementById('newProviderUrl').value = '';
+    document.getElementById('newProviderKey').value = '';
+    await loadProviders();
+  });
+
+  document.getElementById('providersBody').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    const action = btn.dataset.action;
+
+    if (action === 'test') {
+      btn.textContent = 'Testing...';
+      btn.disabled = true;
+      const res = await fetch('/api/auto?route=providers', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'test', id })
+      });
+      const data = await res.json();
+      if (!data.success) alert('Test failed: ' + (data.error || data.status));
+      await loadProviders();
+
+    } else if (action === 'fetch-services') {
+      btn.textContent = 'Fetching...';
+      btn.disabled = true;
+      const res = await fetch('/api/auto?route=providers', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'fetch-services', id })
+      });
+      const data = await res.json();
+      if (!data.success) {
+        alert('Fetch failed: ' + data.error);
+      } else {
+        alert(`Fetched ${data.fetched}, saved ${data.saved}, deactivated ${data.deactivated}.`);
+      }
+      await loadProviders();
+
+      if (document.getElementById('mapProviderSelect').value === id) {
+        await renderMapServiceSelect();
+      }
+
+    } else if (action === 'toggle') {
+      const newStatus = btn.dataset.status === 'active' ? 'disabled' : 'active';
+      await fetch('/api/auto?route=providers', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'update', id, status: newStatus })
+      });
+      await loadProviders();
+
+    } else if (action === 'duplicate') {
+      await fetch('/api/auto?route=providers', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'duplicate', id })
+      });
+      await loadProviders();
+
+    } else if (action === 'delete') {
+      if (!confirm('Delete this provider and all its mappings?')) return;
+      await fetch('/api/auto?route=providers', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'delete', id })
+      });
+      await loadProviders();
+      await loadMapping();
+    }
+  });
+
+  function renderTypeTabs() {
+    const wrap = document.getElementById('typeTabs');
+    wrap.innerHTML = SERVICE_TYPES.map(t =>
+      `<button data-type="${t}" class="${t === currentType ? 'active' : ''}">${t}</button>`
+    ).join('');
+
+    wrap.querySelectorAll('button').forEach(b => {
+      b.addEventListener('click', async () => {
+        currentType = b.dataset.type;
+        renderTypeTabs();
+        await loadMapping();
+      });
+    });
+  }
+
+  function renderMapProviderSelect() {
+    const sel = document.getElementById('mapProviderSelect');
+    sel.innerHTML = providersCache
+      .filter(p => p.status === 'active')
+      .map(p => `<option value="${p.id}">${p.provider_name}</option>`)
+      .join('');
+
+    renderMapServiceSelect();
+  }
+
+  async function renderMapServiceSelect() {
+    const providerId = document.getElementById('mapProviderSelect').value;
+    const sel = document.getElementById('mapServiceSelect');
+    const search = document.getElementById('serviceSearch');
+
+    servicesCache = [];
+    search.value = '';
+
+    if (!providerId) {
+      sel.innerHTML = '';
+      return;
+    }
+
+    sel.innerHTML = '<option value="">Loading services...</option>';
+
+    try {
+      const res = await fetch(
+        '/api/auto?route=services&providerId=' + encodeURIComponent(providerId),
+        { credentials: 'include' }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        sel.innerHTML = '<option value="">Failed to load services</option>';
+        return;
+      }
+
+      servicesCache = [];
+sel.innerHTML = '<option value="">Type in search box to search services...</option>';
+
+    } catch (err) {
+      sel.innerHTML = '<option value="">Failed to load services</option>';
+    }
+  }
+
+  function filterServices() {
+    const search = document
+      .getElementById('serviceSearch')
+      .value
+      .trim()
+      .toLowerCase();
+
+    const sel = document.getElementById('mapServiceSelect');
+
+    const filtered = servicesCache.filter(s => {
+      const id = String(s.service_id || '').toLowerCase();
+      const name = String(s.service_name || '').toLowerCase();
+      return !search || id.includes(search) || name.includes(search);
+    });
+
+    if (!filtered.length) {
+      sel.innerHTML = '<option value="">No matching service</option>';
+      return;
+    }
+
+    sel.innerHTML = filtered.map(s => `
+      <option value="${s.service_id}">
+        ${s.service_id} — ${s.service_name || 'Unnamed'} (rate ${s.rate ?? '?'})
+      </option>
+    `).join('');
+  }
+async function searchServices() {
+  const providerId = document.getElementById('mapProviderSelect').value;
+  const keyword = document.getElementById('serviceSearch').value.trim();
+
+  if (!providerId) return;
+
+  if (keyword.length < 2) {
+    servicesCache = [];
+    document.getElementById('mapServiceSelect').innerHTML =
+      '<option value="">Type at least 2 characters...</option>';
+    return;
+  }
+
+  const res = await fetch(
+    '/api/auto?route=services&providerId=' +
+      encodeURIComponent(providerId) +
+      '&search=' +
+      encodeURIComponent(keyword),
+    {
+      credentials: 'include'
+    }
+  );
+
+  const data = await res.json();
+
+  servicesCache = data.services || [];
+
+  filterServices();
+}
+ document.getElementById('serviceSearch').addEventListener('input', searchServices);
+
+  document.getElementById('mapProviderSelect').addEventListener(
+    'change',
+    renderMapServiceSelect
+  );
+
+  document.getElementById('addMappingBtn').addEventListener('click', async () => {
+    const providerId = document.getElementById('mapProviderSelect').value;
+    const providerServiceId = document.getElementById('mapServiceSelect').value;
+    const customerRate = document.getElementById('mapCustomerRate').value;
+    const errEl = document.getElementById('mappingFormError');
+
+    errEl.style.display = 'none';
+
+    if (!providerId || !providerServiceId) {
+      errEl.textContent = 'Pick a provider and a service.';
+      errEl.style.display = 'block';
+      return;
+    }
+
+    const res = await fetch('/api/auto?route=mapping', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        action: 'save',
+        serviceType: currentType,
+        providerId,
+        providerServiceId,
+        customerRate: customerRate ? Number(customerRate) : null
+      })
+    });
+
+    const data = await res.json();
+
+    if (!data.success) {
+      errEl.textContent = data.error;
+      errEl.style.display = 'block';
+      return;
+    }
+
+    document.getElementById('mapCustomerRate').value = '';
+    await loadMapping();
+  });
+
+  async function loadMapping() {
+    const res = await fetch(
+      '/api/auto?route=mapping&serviceType=' + encodeURIComponent(currentType),
+      { credentials: 'include' }
+    );
+    const data = await res.json();
+    renderMapping(data.mapping || []);
+  }
+
+  function renderMapping(list) {
+    const body = document.getElementById('mappingBody');
+
+    if (!list.length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty">No services mapped for this type yet.</td></tr>';
+      return;
+    }
+
+    body.innerHTML = list.map((m, i) => `
+      <tr data-id="${m.id}">
+        <td>${i + 1}</td>
+        <td>${m.api_providers ? m.api_providers.provider_name : m.provider_id}</td>
+        <td class="mono">${m.provider_service_id}</td>
+        <td>${m.customer_rate ?? '—'}</td>
+        <td>
+          <button class="ghost" data-action="up" ${i === 0 ? 'disabled' : ''}>↑</button>
+          <button class="ghost" data-action="down" ${i === list.length - 1 ? 'disabled' : ''}>↓</button>
+          <button class="ghost danger" data-action="remove">Remove</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  document.getElementById('mappingBody').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+
+    const tr = btn.closest('tr');
+    const id = tr.dataset.id;
+    const action = btn.dataset.action;
+
+    if (action === 'remove') {
+      if (!confirm('Remove this mapping?')) return;
+
+      await fetch('/api/auto?route=mapping', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ action: 'delete', id })
+      });
+
+      await loadMapping();
+      return;
+    }
+
+    const rows = Array.from(document.querySelectorAll('#mappingBody tr'));
+    const ids = rows.map(r => r.dataset.id);
+    const idx = ids.indexOf(id);
+    const swapWith = action === 'up' ? idx - 1 : idx + 1;
+
+    if (swapWith < 0 || swapWith >= ids.length) return;
+
+    [ids[idx], ids[swapWith]] = [ids[swapWith], ids[idx]];
+
+    await fetch('/api/auto?route=mapping', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ action: 'reorder', orderedIds: ids })
+    });
+
+    await loadMapping();
+  });
+
+  // ---------------- Admin tabs + Schedules ----------------
+  let schedulesTimer = null;
+
+  document.querySelectorAll('.atab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.atab').forEach((b) => b.classList.toggle('active', b === btn));
+      const schedules = btn.dataset.atab === 'schedules';
+      document.getElementById('aTabMain').style.display = schedules ? 'none' : 'block';
+      document.getElementById('aTabSchedules').style.display = schedules ? 'block' : 'none';
+      clearInterval(schedulesTimer);
+      if (schedules) {
+        loadAdminSchedules();
+        schedulesTimer = setInterval(loadAdminSchedules, 30000);
+      }
+    });
+  });
+
+  function schedulesMessage(text) {
+    const el = document.getElementById('schedulesMsg');
+    el.textContent = text || '';
+    el.style.display = text ? 'inline' : 'none';
+  }
+
+  async function loadAdminSchedules() {
+    const res = await fetch('/api/auto?route=admin-orders', { credentials: 'include' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.success) { schedulesMessage(data.error || 'Could not load the orders (HTTP ' + res.status + ').'); return; }
+    schedulesMessage('');
+    renderAdminSchedules(data);
+  }
+
+  function renderAdminSchedules(data) {
+    const orders = data.orders || [];
+    document.getElementById('schedulesSummary').textContent = orders.length
+      ? orders.length + ' orders from ' + data.devices + ' device' + (data.devices === 1 ? '' : 's') + ' · ' + orders.filter((o) => o.status === 'running').length + ' running'
+      : '';
+
+    const body = document.getElementById('schedulesBody');
+    body.innerHTML = orders.length ? orders.map((o) => {
+      const pct = o.totalLegs > 0 ? Math.round((o.doneLegs / o.totalLegs) * 100) : 0;
+      const next = o.nextFireAt ? new Date(o.nextFireAt).toLocaleString() : '—';
+      const status = ['running', 'paused', 'completed'].includes(o.status) ? o.status : 'running';
+      const link = /^https?:\/\//i.test(o.link) ? escHtml(o.link) : '';
+      const toggle = status === 'completed' ? '' : status === 'paused'
+        ? `<button class="secondary" data-sa="resume" data-id="${escHtml(o.id)}">▶ Resume</button>`
+        : `<button class="ghost" data-sa="pause" data-id="${escHtml(o.id)}">⏸ Pause</button>`;
+      return `<tr>
+        <td>${escHtml(o.name)}</td>
+        <td class="mono">${escHtml(o.device)}</td>
+        <td class="wrap">${link ? ('<a ' + 'hr' + 'ef="' + link + '" target="_blank" rel="noopener noreferrer" style="color:#8fb4ff;">' + link + '</a>') : '—'}</td>
+        <td><span class="st ${status}">${status}</span></td>
+        <td>${Number(o.doneLegs) || 0}/${Number(o.totalLegs) || 0} legs<div class="bar"><i style="width:${pct}%"></i></div></td>
+        <td>${escHtml(next)}</td>
+        <td class="wrap">${escHtml(o.baseUrl || '—')}</td>
+        <td class="mono wrap">${escHtml(o.apiKey || '—')}</td>
+        <td>${toggle} <button class="danger" data-sa="delete" data-id="${escHtml(o.id)}">Delete</button></td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="9" class="empty">No orders yet.</td></tr>';
+
+    const act = document.getElementById('activityBody');
+    const entries = data.activity;
+    if (entries === null || entries === undefined) { act.innerHTML = '<tr><td colspan="4" class="empty">The scheduler did not return its activity log.</td></tr>'; return; }
+    act.innerHTML = entries.length ? entries.map((e) => {
+      const time = new Date(e.timestamp).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      const detail = e.type === 'connect' ? 'Connected' : (e.totalQuantity ? Number(e.totalQuantity).toLocaleString() : '?') + ' units (' + (e.legCount || '?') + ' legs) → ' + (e.link || '?');
+      return `<tr><td>${escHtml(time)}</td><td class="wrap">${escHtml(e.baseUrl || '—')}</td><td class="mono wrap">${escHtml(e.apiKey || '—')}</td><td class="wrap">${escHtml(detail)}</td></tr>`;
+    }).join('') : '<tr><td colspan="4" class="empty">No activity recorded yet.</td></tr>';
+  }
+
+  document.getElementById('reloadSchedulesBtn').addEventListener('click', loadAdminSchedules);
+
+  document.getElementById('schedulesBody').addEventListener('click', async (e) => {
+    const b = e.target.closest('button[data-sa]');
+    if (!b) return;
+    if (b.dataset.sa === 'delete' && !confirm('Delete this order? Parts that have not run yet will be cancelled.')) return;
+    b.disabled = true;
+    const res = await fetch('/api/auto?route=admin-order-action', {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: b.dataset.id, action: b.dataset.sa })
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok || !d.success) schedulesMessage(d.error || 'That did not work (HTTP ' + res.status + ').');
+    await loadAdminSchedules();
+  });
+
+  boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,261 @@
+/* =====================================================================
+   KM PANEL — BLUE + INDIGO THEME (calm version)
+   Loaded AFTER style.css / gate.css. Visual layer only: no layout rules,
+   no JS. Delete the <link rel="stylesheet" href="neon.css"> line to go
+   back to the original red look.
+
+   Where the light is used (and nowhere else):
+     - ONE slow light running round the border of each tab's main card
+     - soft glow on the active tab, the main buttons and focused inputs
+     - a tiny glowing dot on LIVE
+   ===================================================================== */
+
+:root{
+  --bg: #04070f;
+  --bg-glow:
+    radial-gradient(ellipse 900px 460px at 50% -14%, rgba(60,110,255,0.15), transparent 62%),
+    radial-gradient(ellipse 600px 400px at 100% 30%, rgba(120,100,255,0.05), transparent 62%);
+  --panel:   #080f20;
+  --panel-2: #0c1730;
+  --panel-3: #11204a;
+  --line:    #1a2a4d;
+  --text:    #e9f0fb;
+  --muted:   #8497b9;
+
+  /* the old "red" slot is now the accent */
+  --red:       #6cb4ff;
+  --red-deep:  #3a6df0;
+  --red-soft:  rgba(80,130,255,0.13);
+
+  --blue:   #3b7bff;
+  --indigo: #7b6cff;      /* second colour: pairs with the blue, used sparingly */
+  --ice:    #a9d6ff;
+  --danger: #ff5a73;
+  --danger-soft: rgba(255,90,115,0.13);
+  --grad:   linear-gradient(135deg, #2f78ff 0%, #5b4fe6 100%);
+}
+
+@property --ang{ syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+
+html{ color-scheme: dark; }
+body{ background-attachment: fixed; }
+::selection{ background: rgba(80,130,255,0.4); color: #fff; }
+
+*{ scrollbar-width: thin; scrollbar-color: #2a3f7a #080f20; }
+*::-webkit-scrollbar{ width: 8px; height: 8px; }
+*::-webkit-scrollbar-track{ background: #080f20; }
+*::-webkit-scrollbar-thumb{ background: #2a3f7a; border-radius: 8px; }
+
+/* very faint grid texture at the top of the page */
+body::before{
+  content:""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(110,150,255,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(110,150,255,0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 55% at 50% 0%, #000 15%, transparent 75%);
+          mask-image: radial-gradient(ellipse 80% 55% at 50% 0%, #000 15%, transparent 75%);
+}
+.shell{ position: relative; z-index: 1; }
+
+/* ---------- header ---------- */
+/* "The" and "KM": two different colour blends from the page's palette, each slowly
+   drifting through its colours (out of step with each other). Calm, no glow. */
+.brand-the, .brand-logo{
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  background-size: 260% 100%;
+  animation: brand-flow 9s ease-in-out infinite alternate;
+}
+.brand-the{
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.25rem;
+  letter-spacing: 0.03em;
+  background-image: linear-gradient(90deg, #b3a6ff 0%, #7b9bff 35%, #6cb4ff 65%, #b3a6ff 100%);
+}
+.brand-logo{
+  background-image: linear-gradient(90deg, #86e6ff 0%, #6cb4ff 30%, #8f7dff 65%, #86e6ff 100%);
+  animation-direction: alternate-reverse;
+}
+@keyframes brand-flow{
+  from{ background-position: 0% 50%; }
+  to{   background-position: 100% 50%; }
+}
+.balance-pill{ background: rgba(51,209,122,0.08); border-color: rgba(51,209,122,0.28); }
+.balance-dot{ box-shadow: 0 0 6px var(--green); }
+
+/* ---------- tabs ---------- */
+.tabs{
+  background: rgba(8,15,32,0.85);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  border-color: #1f3160;
+}
+.tab-btn{ transition: color .18s ease, background .18s ease, box-shadow .18s ease; }
+.tab-btn:hover{ color: #fff; background: rgba(80,130,255,0.08); }
+.tab-btn.active{
+  background: var(--grad);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(70,100,255,0.38), inset 0 1px 0 rgba(255,255,255,0.18);
+}
+
+/* ---------- cards ---------- */
+.create-order-card, .graph-card, .api-card, .cost-card, .lock-card, .modal-box{
+  position: relative;
+  background: linear-gradient(180deg, rgba(12,23,48,0.82), rgba(8,15,32,0.92));
+  border-color: #1f3160;
+  box-shadow: 0 12px 32px -18px rgba(0,0,0,0.8), inset 0 1px 0 rgba(160,190,255,0.05);
+}
+
+/* the one moving light: only on each tab's main card, slow and thin */
+.create-order-card::before, .graph-card::before, .panel-head + .api-card::before, .lock-card::before{
+  content:""; position: absolute; inset: -1px; border-radius: inherit; padding: 1.5px; pointer-events: none;
+  background: conic-gradient(from var(--ang),
+    transparent 0deg, transparent 280deg,
+    rgba(123,108,255,0.35) 315deg, #6cb4ff 345deg, rgba(255,255,255,0.9) 356deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  opacity: 0.75;
+  animation: border-run 14s linear infinite;
+}
+.graph-card::before{ animation-delay: -6s; }
+@keyframes border-run{ to{ --ang: 360deg; } }
+
+/* ---------- inputs ---------- */
+.input{
+  background: rgba(4,9,22,0.9);
+  border-color: #1d2f58;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.input::placeholder{ color: #50658f; }
+.input:focus{ border-color: #4a86ff; box-shadow: 0 0 0 3px rgba(74,134,255,0.16); }
+.field-label{ color: #7589b0; }
+
+/* ---------- buttons ---------- */
+.submit-btn{
+  background: var(--grad);
+  box-shadow: 0 6px 20px -4px rgba(70,100,255,0.5), inset 0 1px 0 rgba(255,255,255,0.18);
+  transition: filter .15s ease, box-shadow .15s ease, transform .1s ease;
+}
+.submit-btn:hover{ filter: brightness(1.1); box-shadow: 0 8px 26px -4px rgba(80,110,255,0.65), inset 0 1px 0 rgba(255,255,255,0.22); }
+.submit-btn:active{ transform: translateY(1px); }
+
+.mode-toggle-row{ background: rgba(4,9,22,0.85); border-color: #1d2f58; }
+.mode-toggle-btn.active{ background: var(--grad); box-shadow: 0 3px 12px rgba(70,100,255,0.35), inset 0 1px 0 rgba(255,255,255,0.16); }
+
+.presets-btn, .edit-graph-btn, .copy-btn, .sync-badge, .gap-mode-btn.active{
+  border-color: rgba(108,180,255,0.45);
+}
+.gap-mode-btn{ background: rgba(4,9,22,0.85); border-color: #1d2f58; }
+.add-slot-btn{ border-color: #223765; }
+.add-slot-btn:hover{ border-color: #6cb4ff; }
+
+/* errors and deletes stay warm so they never look like a normal action */
+.connect-status.error, .lock-error, .qty-warning, .kmp-error{ color: var(--danger); }
+.order-action-btn.delete{ background: var(--danger-soft); color: var(--danger); }
+.remove-btn:hover{ border-color: var(--danger); color: var(--danger); }
+.profile-remove-btn{ background: var(--danger-soft); border-color: rgba(255,90,115,0.55); color: var(--danger); }
+.dot-red{ background: var(--danger); }
+.dot-blue{ background: #4ba3ff; }
+
+/* ---------- builder ---------- */
+.service-card, .fixed-svc-card, .profile-row, .order-card, .api-key-box, .fetched-service-row, .svc-leg-select-row{
+  background: rgba(12,23,48,0.7);
+  border-color: #1d2f58;
+  transition: border-color .18s ease;
+}
+.service-card:hover, .profile-row:hover, .order-card:hover, .fetched-service-row:hover{ border-color: #35508f; }
+.fixed-svc-primary-tag{ background: rgba(123,108,255,0.16); color: #b3a9ff; }
+
+.svc-toggle-track{ background: #17274d; }
+.service-dropdown{ background: #0c1730; border-color: #2c4585; box-shadow: 0 14px 34px -10px rgba(0,0,0,0.8); }
+.service-option:hover{ background: rgba(80,130,255,0.16); }
+
+.leg-dot{ box-shadow: 0 0 0 3px var(--red-soft); }
+.leg-row::before{ background: #1d2f58; }
+.preview-head{ border-top-color: #223765; }
+
+input[type="range"].randomness{ background: #17274d; }
+input[type="range"].randomness::-webkit-slider-thumb{ background: #6cb4ff; box-shadow: 0 0 0 4px var(--red-soft); }
+input[type="range"].randomness::-moz-range-thumb{ background: #6cb4ff; }
+.sync-toggle-row input{ accent-color: #4a86ff; }
+
+/* ---------- graphs ---------- */
+.live-pill{ color: var(--ice); border-color: rgba(108,180,255,0.45); }
+.live-dot{ background: #4fd1ff; box-shadow: 0 0 8px #4fd1ff; }
+.custom-graph-svg{ background: rgba(4,9,22,0.9); border-color: #1d2f58; }
+.custom-graph-svg path{ stroke: #6cb4ff; }              /* was red */
+.graph-tooltip, .kmp-tooltip{ background: rgba(4,9,22,0.97); border-color: #2c4585; box-shadow: 0 8px 24px -6px rgba(0,0,0,0.8); }
+
+.ig-style-card{ background: #050b1a; border-color: #15264f; }
+.ig-pill{ border-color: #223765; color: #93a9d2; }
+.ig-pill.active{ background: rgba(80,130,255,0.16); border-color: #4a86ff; color: #fff; }
+.ig-grid-line{ stroke: #12234a; }
+.ig-axis-text{ fill: #7087b3; }
+.ig-line-path{ stroke: #7aa7ff; }                        /* was magenta */
+
+/* ---------- progress ---------- */
+.order-progress-bar{ background: #12234a; }
+.order-progress-fill{ background: linear-gradient(90deg, #3b7bff, #7b6cff); }
+
+/* ---------- tables / logs ---------- */
+.schedule-table, .logs-list{ border-color: #1d2f58; }
+.schedule-row, .log-row{ background: rgba(8,15,32,0.92); border-bottom-color: #152550; transition: background .15s ease; }
+.schedule-row:not(.head-row):hover, .log-row:hover{ background: rgba(16,32,70,0.9); }
+.schedule-row.head-row{ background: rgba(12,23,48,0.96); }
+.log-time{ color: #667eae; }
+
+.help-contact-row a{ color: var(--ice); }
+.help-contact-box{ border-top-color: #223765; }
+.modal-overlay{ background: rgba(3,6,16,0.78); -webkit-backdrop-filter: blur(5px); backdrop-filter: blur(5px); }
+
+/* ---------- extra modules (Auto Order builder / My APIs) ---------- */
+html body .kmp-card, html body .kmp-builder{
+  background: linear-gradient(180deg, rgba(12,23,48,0.82), rgba(8,15,32,0.92));
+  border-color: #1f3160;
+  box-shadow: 0 12px 32px -18px rgba(0,0,0,0.8);
+}
+html body .kmp-btn, html body .kmp-place-btn{
+  background: var(--grad); color: #fff;
+  box-shadow: 0 6px 18px -4px rgba(70,100,255,0.5);
+}
+html body .kmp-btn:hover, html body .kmp-place-btn:hover{ filter: brightness(1.1); }
+html body .kmp-btn.secondary{ background: transparent; color: var(--ice); border: 1px solid rgba(108,180,255,0.5); box-shadow: none; }
+html body .kmp-btn.danger{ background: transparent; color: var(--danger); border: 1px solid var(--danger); box-shadow: none; }
+html body .kmp-btn.ghost{ background: transparent; color: #93a9d2; border: 1px solid #25407a; box-shadow: none; }
+html body .kmp-input, html body .kmp-field input, html body .kmp-field select, html body .kmp-field textarea{
+  background: rgba(4,9,22,0.9); border-color: #1d2f58; color: var(--text);
+}
+html body .kmp-field input:focus, html body .kmp-field select:focus, html body .kmp-field textarea:focus, html body .kmp-input:focus{
+  border-color: #4a86ff; box-shadow: 0 0 0 3px rgba(74,134,255,0.16);
+}
+html body .kmp-outer-toggle button{ background: rgba(8,15,32,0.9); border-color: #1d2f58; color: #a3b6da; }
+html body .kmp-outer-toggle button.active{ background: var(--grad); color: #fff; border-color: transparent; }
+html body .kmp-service-row, html body .kmp-api-item, html body .kmp-summary, html body .kmp-graph-wrap{
+  background: rgba(12,23,48,0.7); border-color: #1d2f58;
+}
+html body .kmp-switch .slider{ background: #17274d; }
+html body .kmp-switch input:checked + .slider{ background: #3b8cff; }
+html body .kmp-section{ border-bottom-color: #152550; }
+html body .kmp-history-row, html body .kmp-summary-row.total{ border-color: #152550; }
+
+/* ---------- accessibility ---------- */
+:where(button, a, input, select, textarea):focus-visible{ outline: 2px solid #6cb4ff; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{ animation: none !important; transition: none !important; }
+}
+
+/* ---------- Auto tab: key gate, key bar, delivery speed, reload ---------- */
+.auto-gate-card{ background: linear-gradient(180deg, rgba(12,23,48,0.85), rgba(8,15,32,0.95)); border-color: #25407a; }
+.auto-gate-card .input{ color: var(--ice); }
+.auto-keybar{ background: rgba(12,23,48,0.75); border-color: #1f3160; }
+.keybar-btn{ border-color: #25407a; }
+.keybar-meter{ background: #12234a; }
+.keybar-meter i{ background: linear-gradient(90deg, #33d17a, #6cb4ff); }
+.window-btn{ background: rgba(12,23,48,0.7); border-color: #1d2f58; }
+.window-btn:hover{ border-color: #4a86ff; }
+.window-btn.active{ background: linear-gradient(135deg, rgba(47,120,255,0.26), rgba(91,79,230,0.26)); border-color: #5b8cff; }
+.regen-btn{ background: rgba(12,23,48,0.8); border-color: #25407a; color: var(--ice); }
+.regen-btn:hover{ border-color: #6cb4ff; background: rgba(47,120,255,0.18); }
+.graph-meta{ color: #8aa0c8; }
