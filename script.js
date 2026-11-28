@@ -1,8 +1,27 @@
 // ==========================================
 // HARDCODED PROXY — no user-facing field needed
 // ==========================================
-const PROXY_URL = "https://kmpanel.onrender.com/proxy";
-const PROXY_ORIGIN = PROXY_URL.replace(/\/proxy$/, "");
+// Relays the calls the browser makes to a customer's own panel API (connect, balance, services...).
+// This is your proxy. The site also has its own relay at "/api/proxy": use that instead if you ever want to drop the proxy.
+const PROXY_URL = "https://kmpanel-proxy.vercel.app/proxy";
+
+async function safeJson(res) {
+  // Reads a response without ever throwing "Unexpected end of JSON input". An empty or non-JSON answer
+  // becomes { success:false, error:"..." } that says what really happened, so the page can show it.
+  const text = await res.text().catch(() => "");
+  if (text) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      /* not JSON, handled below */
+    }
+  }
+  const missing = res.status === 404 || res.status === 405 ? " The server has no API at this address, so the backend is probably not deployed here." : "";
+  const detail = text
+    ? "The server sent something that is not JSON (HTTP " + res.status + "): " + text.replace(/\s+/g, " ").slice(0, 120)
+    : "The server answered HTTP " + res.status + (res.statusText ? " " + res.statusText : "") + " with an empty response.";
+  return { success: false, error: detail + missing };
+}
 
 // ==========================================
 // CATEGORY COLORS (used everywhere a category shows on a graph)
@@ -247,7 +266,7 @@ async function callPanelAPI(baseUrl, apiKey, actionParams) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ baseUrl, params }),
   });
-  const data = await res.json();
+  const data = await safeJson(res);
   if (data && data.error) throw new Error(data.error);
   return data;
 }
@@ -769,7 +788,7 @@ async function autoFetchCatalog() {
   if (!AUTO.key) return { ok: false, code: "none" };
   try {
     const res = await fetch(`${AUTO_API}?route=key-catalog`, { headers: { "x-km-key": AUTO.key } });
-    const data = await res.json().catch(() => ({}));
+    const data = await safeJson(res);
     if (res.ok && data.success) {
       AUTO.info = data.key;
       AUTO.catalog = data.services || {};
@@ -1245,7 +1264,7 @@ async function submitAutoKeyOrder() {
       headers: { "Content-Type": "application/json", "x-km-key": AUTO.key },
       body: JSON.stringify({ name, link, window: AUTO.window, clientToken: AUTO.token, plan: AUTO.plan }),
     });
-    const data = await res.json().catch(() => ({}));
+    const data = await safeJson(res);
 
     if (res.ok && data.success) {
       AUTO.token = newClientToken();
@@ -1848,7 +1867,7 @@ submitOrderBtn.addEventListener("click", async () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, link, baseUrl: PANEL.baseUrl, apiKey: PANEL.apiKey, legs: allLegsForOrder }),
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (data.error) throw new Error(data.error);
 
       orderStatusEl.textContent = `Schedule "${name}" is now running on the server (${data.scheduled} legs) — safe to close this tab, delivery continues.`;
@@ -1894,8 +1913,11 @@ trackBtn.addEventListener("click", async () => {
   let serverEntries = [];
 
   try {
-    const res = await fetch(`${PROXY_ORIGIN}/history?link=${encodeURIComponent(link)}`);
-    if (res.ok) serverEntries = await res.json();
+    const res = await fetch(`/api/auto?route=history&link=${encodeURIComponent(link)}`);
+    if (res.ok) {
+      const parsed = await safeJson(res);
+      serverEntries = Array.isArray(parsed) ? parsed : [];
+    }
   } catch {
     // server unreachable — fall back to local-only history silently
   }
@@ -2027,7 +2049,7 @@ async function loadOrders() {
   ordersListEl.innerHTML = `<div class="summary-empty">Loading...</div>`;
   try {
     const res = await fetch("/api/auto?route=my-orders", { credentials: "same-origin" });
-    const data = await res.json().catch(() => ({}));
+    const data = await safeJson(res);
     if (!res.ok || !data.success) throw new Error(data.error || `Server error (HTTP ${res.status})`);
     renderOrders(data.orders);
   } catch (err) {
@@ -2097,7 +2119,7 @@ function renderOrders(orders) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ id, action }),
         });
-        const data = await res.json().catch(() => ({}));
+        const data = await safeJson(res);
         if (!res.ok || !data.success) throw new Error(data.error || `Server error (HTTP ${res.status})`);
         addLog(`${{ pause: "Paused", resume: "Resumed", delete: "Deleted" }[action] || action} order ${id}`);
       } catch (err) {

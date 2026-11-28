@@ -80,6 +80,10 @@ app.all("/api/panel-config", (req, res) => {
   req.query = { ...req.query, route: "panel-config" };
   return dispatchAuto(req, res);
 });
+app.all("/api/proxy", (req, res) => {
+  req.query = { ...req.query, route: "proxy" };
+  return dispatchAuto(req, res);
+});
 app.all("/api/auto", dispatchAuto);
 
 // Every other file in api/ becomes /api/<name> (e.g. api/admin/keys.js -> /api/admin/keys).
@@ -121,7 +125,7 @@ app.use((req, res, next) => {
     /^\/api(?:\/|$)/,
     /(?:^|\/)\.[^/]/, // any dotfile or dot-folder: .env, .git, .gitignore ...
     /\.(?:sql|env|log|md)$/,
-    /^\/(server\.js|package\.json|package-lock\.json|vercel\.json|build\.js|setup\.txt|deploy-render\.txt)$/
+    /^\/(server\.js|package\.json|package-lock\.json|vercel\.json|build\.js|deploy\.txt)$/
   ];
   if (blocked.some((pattern) => pattern.test(pathname))) {
     return res.status(404).type("text/plain").send("Not found");
@@ -181,11 +185,11 @@ process.on("unhandledRejection", (reason) => {
 
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`The KM server listening on port ${PORT}`);
-  // Sends customers' custom comments to the provider at their scheduled time (see lib/auto/commentWorker.js).
+  // Sends the scheduled parts of every order when they are due (see lib/sched/loop.js).
   try {
-    require("./lib/auto/commentWorker").start();
+    require("./lib/sched/loop").start();
   } catch (error) {
-    console.error("[comments] worker could not start:", error.message);
+    console.error("[scheduler] could not start:", error.message);
   }
 });
 
@@ -193,7 +197,7 @@ const server = app.listen(PORT, "0.0.0.0", () => {
 process.on("SIGTERM", () => {
   console.log("[server] SIGTERM received, shutting down");
   try {
-    require("./lib/auto/commentWorker").stop();
+    require("./lib/sched/loop").stop();
   } catch {
     /* ignore */
   }

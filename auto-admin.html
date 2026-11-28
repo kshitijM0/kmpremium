@@ -160,6 +160,7 @@
       <p class="hint">Every order from every device, with the panel and API each one uses. Pause, resume or delete any of them. Updates itself every 30 seconds while this tab is open.</p>
       <div class="row">
         <button class="ghost" id="reloadSchedulesBtn">↻ Refresh</button>
+        <button class="ghost" id="runNowBtn" title="Sends every part that is due right now">⚡ Send due parts now</button>
         <span id="schedulesSummary" class="hint" style="margin:0;"></span>
         <span id="schedulesMsg" class="error" style="display:none;"></span>
       </div>
@@ -185,6 +186,24 @@
 </div>
 
 <script>
+async function safeJson(res) {
+  // Reads a response without ever throwing "Unexpected end of JSON input". An empty or non-JSON answer
+  // becomes { success:false, error:"..." } that says what really happened, so the page can show it.
+  const text = await res.text().catch(() => "");
+  if (text) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      /* not JSON, handled below */
+    }
+  }
+  const missing = res.status === 404 || res.status === 405 ? " The server has no API at this address, so the backend is probably not deployed here." : "";
+  const detail = text
+    ? "The server sent something that is not JSON (HTTP " + res.status + "): " + text.replace(/\s+/g, " ").slice(0, 120)
+    : "The server answered HTTP " + res.status + (res.statusText ? " " + res.statusText : "") + " with an empty response.";
+  return { success: false, error: detail + missing };
+}
+
   const loginBox = document.getElementById('loginBox');
   const mainPanel = document.getElementById('mainPanel');
   const SERVICE_TYPES = ['views','likes','shares','saves','reposts','comments'];
@@ -209,7 +228,7 @@
     }
     if (res.status === 404) { showLoginError('/api/auto was not found — deploy api/auto.js first.'); return false; }
     if (!res.ok) {
-      const d = await res.json().catch(() => ({}));
+      const d = await safeJson(res);
       showLoginError('Server error (' + res.status + '): ' + (d.error || 'check the Vercel function logs.'));
       return false;
     }
@@ -235,7 +254,7 @@
       });
     } catch (e) { showLoginError('Network error: ' + e.message); return; }
     if (res.ok) { await boot(true); return; }
-    const data = await res.json().catch(() => ({}));
+    const data = await safeJson(res);
     const hints = {
       401: ' Check the password (it is the ADMIN_PASSWORD value in Vercel).',
       404: ' /api/admin/auth is missing — deploy api/auto.js and vercel.json.',
@@ -263,13 +282,13 @@
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify(body)
     });
-    const data = await res.json().catch(() => ({}));
+    const data = await safeJson(res);
     return { ok: res.ok && data.success !== false, data };
   }
 
   async function loadKeys() {
     const res = await fetch('/api/auto?route=keys', { credentials: 'include' });
-    const data = await res.json().catch(() => ({}));
+    const data = await safeJson(res);
     if (!res.ok) { keysMessage(data.error || 'Could not load keys.'); return; }
     keysCache = data.keys || [];
     renderKeys();
@@ -356,7 +375,7 @@
 
   async function loadProviders() {
     const res = await fetch('/api/auto?route=providers', { credentials: 'include' });
-    const data = await res.json();
+    const data = await safeJson(res);
     providersCache = data.providers || [];
     renderProviders();
     renderMapProviderSelect();
@@ -399,7 +418,7 @@
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ action: 'create', providerName, apiUrl, apiKey })
     });
-    const data = await res.json();
+    const data = await safeJson(res);
     if (!data.success) {
       errEl.textContent = data.error;
       errEl.style.display = 'block';
@@ -426,7 +445,7 @@
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ action: 'test', id })
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!data.success) alert('Test failed: ' + (data.error || data.status));
       await loadProviders();
 
@@ -439,7 +458,7 @@
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ action: 'fetch-services', id })
       });
-      const data = await res.json();
+      const data = await safeJson(res);
       if (!data.success) {
         alert('Fetch failed: ' + data.error);
       } else {
@@ -529,7 +548,7 @@
         { credentials: 'include' }
       );
 
-      const data = await res.json();
+      const data = await safeJson(res);
 
       if (!res.ok) {
         sel.innerHTML = '<option value="">Failed to load services</option>';
@@ -593,7 +612,7 @@ async function searchServices() {
     }
   );
 
-  const data = await res.json();
+  const data = await safeJson(res);
 
   servicesCache = data.services || [];
 
@@ -633,7 +652,7 @@ async function searchServices() {
       })
     });
 
-    const data = await res.json();
+    const data = await safeJson(res);
 
     if (!data.success) {
       errEl.textContent = data.error;
@@ -650,7 +669,7 @@ async function searchServices() {
       '/api/auto?route=mapping&serviceType=' + encodeURIComponent(currentType),
       { credentials: 'include' }
     );
-    const data = await res.json();
+    const data = await safeJson(res);
     renderMapping(data.mapping || []);
   }
 
@@ -743,7 +762,7 @@ async function searchServices() {
 
   async function loadAdminSchedules() {
     const res = await fetch('/api/auto?route=admin-orders', { credentials: 'include' });
-    const data = await res.json().catch(() => ({}));
+    const data = await safeJson(res);
     if (!res.ok || !data.success) { schedulesMessage(data.error || 'Could not load the orders (HTTP ' + res.status + ').'); return; }
     schedulesMessage('');
     renderAdminSchedules(data);
@@ -789,6 +808,19 @@ async function searchServices() {
 
   document.getElementById('reloadSchedulesBtn').addEventListener('click', loadAdminSchedules);
 
+  // Useful on Vercel (no always-on server) and for testing: send whatever is due right now.
+  document.getElementById('runNowBtn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    schedulesMessage('');
+    const res = await fetch('/api/auto?route=cron', { method: 'POST', credentials: 'include' });
+    const d = await safeJson(res);
+    btn.disabled = false;
+    if (!res.ok || !d.success) { schedulesMessage(d.error || 'That did not work (HTTP ' + res.status + ').'); return; }
+    document.getElementById('schedulesSummary').textContent = 'Sent ' + d.sent + ', retrying ' + d.retried + ', failed ' + d.failed + (d.more ? ' — more are due, press again' : '');
+    setTimeout(loadAdminSchedules, 600);
+  });
+
   document.getElementById('schedulesBody').addEventListener('click', async (e) => {
     const b = e.target.closest('button[data-sa]');
     if (!b) return;
@@ -799,7 +831,7 @@ async function searchServices() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: b.dataset.id, action: b.dataset.sa })
     });
-    const d = await res.json().catch(() => ({}));
+    const d = await safeJson(res);
     if (!res.ok || !d.success) schedulesMessage(d.error || 'That did not work (HTTP ' + res.status + ').');
     await loadAdminSchedules();
   });

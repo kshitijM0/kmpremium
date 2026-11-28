@@ -61,6 +61,24 @@
 </div>
 
 <script>
+async function safeJson(res) {
+  // Reads a response without ever throwing "Unexpected end of JSON input". An empty or non-JSON answer
+  // becomes { success:false, error:"..." } that says what really happened, so the page can show it.
+  const text = await res.text().catch(() => "");
+  if (text) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      /* not JSON, handled below */
+    }
+  }
+  const missing = res.status === 404 || res.status === 405 ? " The server has no API at this address, so the backend is probably not deployed here." : "";
+  const detail = text
+    ? "The server sent something that is not JSON (HTTP " + res.status + "): " + text.replace(/\s+/g, " ").slice(0, 120)
+    : "The server answered HTTP " + res.status + (res.statusText ? " " + res.statusText : "") + " with an empty response.";
+  return { success: false, error: detail + missing };
+}
+
   const loginBox = document.getElementById('loginBox');
   const adminBox = document.getElementById('adminBox');
   const loginError = document.getElementById('loginError');
@@ -68,7 +86,7 @@
   async function loadKeys() {
     const res = await fetch('/api/admin/keys');
     if (!res.ok) return false;
-    const data = await res.json();
+    const data = await safeJson(res);
     renderKeys(data.keys || []);
     loginBox.style.display = 'none';
     adminBox.style.display = 'block';
@@ -119,7 +137,7 @@
       }
       return;
     }
-    const data = await res.json().catch(() => ({}));
+    const data = await safeJson(res);
     const hints = {
       401: ' Check the password (it is the ADMIN_PASSWORD value in Vercel).',
       404: ' /api/admin/auth is missing — deploy api/auto.js and vercel.json.',

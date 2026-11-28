@@ -1,7 +1,10 @@
 {
   "cleanUrls": true,
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "rewrites": [
     { "source": "/api/admin/auth", "destination": "/api/auto?route=auth" },
-    { "source": "/api/panel-config", "destination": "/api/auto?route=panel-config" }
+    { "source": "/api/panel-config", "destination": "/api/auto?route=panel-config" },
+    { "source": "/api/proxy", "destination": "/api/auto?route=proxy" }
   ]
 }

@@ -1,0 +1,89 @@
+THE KM — DEPLOY GUIDE (from zero: GitHub -> Render or Vercel)
+================================================================
+
+WHAT IS IN THIS ZIP
+  index.html, script.js, style.css, auto-key.css, neon.css ...   the website (4 tabs: API, Order, Tracker, Schedules)
+  auto-admin.html (/auto-admin)                                   your admin: Keys, Panels, Services & prices, Schedules
+  admin.html (/admin), wallet.html, panel-config.html             older pages, kept working
+  api/                                                            Vercel functions (12 files = the Vercel free-plan limit)
+  lib/                                                            all backend logic (keys, orders, scheduler, security)
+  server.js                                                       the same backend as one Node server (for Render)
+  build.js                                                        production build (minifies script.js) -> dist/
+  supabase/                                                       the database setup (SQL files)
+  package.json, vercel.json
+
+The panel proxy used by the browser is yours:  https://kmpanel-proxy.vercel.app/proxy   (line 5 of script.js).
+The site also has its own relay at /api/proxy; to use that instead, change that one line to  "/api/proxy".
+There is NO separate scheduler service any more: orders and their timed parts live in Supabase, and the server
+sends each part when it is due.
+
+----------------------------------------------------------------
+STEP 1 — GITHUB
+  Create a new empty repository, unzip this folder and upload EVERYTHING inside it (keep the folders api/, lib/, supabase/).
+  Do not upload node_modules or dist.
+
+STEP 2 — SUPABASE  (SQL Editor -> New query -> paste a file -> Run, one at a time, in this order)
+  For the Auto system (keys, prices, orders):
+    1. supabase/auto-schema.sql          (panels, their services, service prices)
+         if it complains about a missing table, run supabase/schema.sql first
+    2. supabase/auto-keys-schema.sql     (keys with a USD balance)
+    3. supabase/scheduler-schema.sql     (orders and their timed parts)
+  Only if you still use the older time-keys / wallet pages (/admin, /wallet):
+       schema.sql, wallet-schema.sql, device-wallet-migration.sql, upi-deposit-migration.sql, frontend-phase2-schema.sql
+
+STEP 3 — ENVIRONMENT VARIABLES  (set them on Render or Vercel, never in GitHub)
+  Required
+    SUPABASE_URL                   Supabase -> Project Settings -> API -> Project URL
+    SUPABASE_SERVICE_ROLE_KEY      same page: the service_role key (NOT the anon key). Keep it secret.
+    ADMIN_PASSWORD                 the password you type on /auto-admin
+    ADMIN_SESSION_SECRET           any long random text (signs the admin login and tags devices)
+    PROVIDER_ENCRYPTION_KEY        any long random text. Panel API keys are encrypted with it. If you change it later,
+                                   every saved panel key becomes unreadable, so choose it once and keep a copy.
+  Needed only for the older pages
+    KEY_SESSION_SECRET, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, LINKVERTISE_ANTI_BYPASS_TOKEN, UPI_ID, UPI_NAME
+  Optional
+    CRON_SECRET                    lets a pinger trigger the scheduler (Vercel only, see below)
+    CRON_BATCH                     parts sent per pass (default 20)
+    DEVICE_TAG_SECRET              separate secret for device tags (default: ADMIN_SESSION_SECRET)
+
+----------------------------------------------------------------
+OPTION A — RENDER  (recommended: the server stays on, so the scheduler runs by itself)
+  New -> Web Service -> connect the repository
+    Build Command :  npm install && npm run build
+    Start Command :  npm start
+  Add the environment variables, deploy. Your site is the URL Render gives you; admin is  /auto-admin.
+  The log should say:  [scheduler] started (checks every 15 seconds)
+  Note: Render's FREE plan puts the service to sleep after ~15 minutes without visitors, and scheduled parts only go
+  out while it is awake. For real orders use a paid instance, or ping  https://YOURSITE/healthz  every 10 minutes
+  with a free monitor (UptimeRobot).
+
+OPTION B — VERCEL
+  Add New -> Project -> import the repository. Leave the settings as they are (vercel.json already sets
+  Build Command npm run build and Output Directory dist). Add the environment variables, deploy.
+  Vercel has no always-on server, so something must wake the scheduler every minute:
+    1. add the variable  CRON_SECRET  (a long random text)
+    2. at https://cron-job.org (free) create a job, every 1 minute, URL:
+         https://YOURSITE.vercel.app/api/auto?route=cron&secret=YOUR_CRON_SECRET
+    (Vercel's own cron on the free plan can only run once a day, so it is not used here.)
+  Until this is set up nothing is sent. You can also press "Send due parts now" in /auto-admin -> Schedules.
+
+----------------------------------------------------------------
+FIRST USE  (https://YOURSITE/auto-admin)
+  1. Panels    -> add your panel (name, API URL, API key). Press Test, then Fetch Services.
+  2. Service Mapping -> for Views, Likes, Shares, Saves, Reposts, Comments pick the service and type the
+     Customer rate in dollars per 1000. A service with no rate is hidden from customers.
+  3. Customer Keys -> type the dollars (1, 2, 5...) -> Create key -> send the key to the customer.
+  Customer: site -> Order -> Auto -> paste the key -> place orders. At $0 the key switches itself off.
+
+HOW SCHEDULES WORK
+  Each customer sees only the orders placed from their own device (an HttpOnly cookie), never an API key.
+  /auto-admin -> Schedules shows every order from every device with the panel and API key it uses.
+  Orders from before this version (which lived on the old scheduler) do not appear here.
+
+IF SOMETHING GOES WRONG
+  - Site still looks old, or "BUILD FAILED ... file not found": the build checks every file the HTML mentions.
+    Read the line after "BUILD FAILED" in the deploy log; it names the missing file.
+  - /auto-admin says "Invalid API key" or 500: SUPABASE_SERVICE_ROLE_KEY / SUPABASE_URL are wrong or from another project.
+  - 500 "Did you run supabase/...sql": one of the SQL files in step 2 was skipped.
+  - Parts stay "pending": the scheduler is not running (Render asleep, or the Vercel pinger is not set up).
+  - Admin login fails: the message under the box says why (wrong password, too many tries, missing variables).
